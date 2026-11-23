@@ -1,0 +1,114 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Validate the release
+        id: meta
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          test "$(cat VERSION)" = "$version"
+          git fetch -q origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          grep -qx "## $version" CHANGELOG.md
+          grep -q "<string>${version%%-*}</string>" packaging/macos/Info.plist
+          case "$version" in *-*) prerelease=true ;; *) prerelease=false ;; esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+      - name: Build the package and checksums
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          mkdir dist
+          git archive --format=tar.gz --prefix="lazycode-$VERSION/" -o "dist/lazycode-$VERSION.tar.gz" "$GITHUB_SHA"
+          cp install.sh dist/install.sh
+          (cd dist && sha256sum "lazycode-$VERSION.tar.gz" install.sh > SHA256SUMS)
+          awk -v heading="## $VERSION" '$0 == heading { found = 1; next } /^## / { found = 0 } found' CHANGELOG.md > notes.md
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release
+          path: |
+            dist/*
+            notes.md
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PRERELEASE: ${{ needs.build.outputs.prerelease }}
+        run: |
+          flags="--latest"
+          if [ "$PRERELEASE" = true ]; then flags="--prerelease"; fi
+          # shellcheck disable=SC2086
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --title "LazyCode $GITHUB_REF_NAME" \
+            --notes-file notes.md $flags
+
+  homebrew:
+    name: Update Homebrew tap
+    needs: [build, publish]
+    if: needs.build.outputs.prerelease == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+      - name: Publish the formula
+        env:
+          DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          key="$RUNNER_TEMP/tap_key"
+          hosts="$RUNNER_TEMP/known_hosts"
+          (umask 077 && printf '%s\n' "$DEPLOY_KEY" > "$key")
+          curl -fsSL https://api.github.com/meta | jq -r '.ssh_keys[] | "github.com " + .' > "$hosts"
+          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o UserKnownHostsFile=$hosts -o StrictHostKeyChecking=yes"
+          git clone "git@github.com:$GITHUB_REPOSITORY_OWNER/homebrew-tap.git" tap
+          sha=$(grep " lazycode-$VERSION.tar.gz$" dist/SHA256SUMS | cut -d' ' -f1)
+          mkdir -p tap/Formula
+          sed -e "s|@OWNER@|$GITHUB_REPOSITORY_OWNER|g" -e "s|@VERSION@|$VERSION|g" -e "s|@SHA256@|$sha|g" \
+            packaging/homebrew/lazycode.rb > tap/Formula/lazycode.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/lazycode.rb
+          git diff --cached --quiet || git commit -m "lazycode $VERSION"
+          git push origin HEAD

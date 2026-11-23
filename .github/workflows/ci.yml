@@ -1,0 +1,175 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Shell scripts
+        run: shellcheck install.sh bin/lazycode tests/headless.sh
+      - name: Lua format
+        run: npx --yes @johnnymorganz/stylua-bin@2.6.0 --check lua
+      - name: Python syntax
+        run: python3 -m py_compile scripts/*.py tests/*.py
+      - name: Logo is up to date
+        run: |
+          python3 scripts/generate-logo.py
+          git diff --exit-code assets/logo.svg
+
+  e2e:
+    name: E2E (${{ matrix.suite }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [editing, terminal, welcome, explorer, kitty, complete]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential tmux xvfb xz-utils libglib2.0-bin \
+            libgl1 libegl1 libgl1-mesa-dri libxcursor1 libxi6 libxrandr2 libxinerama1 \
+            libxkbcommon-x11-0 libxcb-xkb1 libfontconfig1 fonts-dejavu-core
+      - name: Install from a clean home
+        run: |
+          home="$RUNNER_TEMP/home"
+          mkdir -p "$home/e2e"
+          {
+            echo "HOME=$home"
+            echo "LC_BASE=$home/e2e"
+          } >> "$GITHUB_ENV"
+          echo "$home/.local/share/lazycode-runtime/bin" >> "$GITHUB_PATH"
+          HOME="$home" git config --global user.name "CI"
+          HOME="$home" git config --global user.email "ci@users.noreply.github.com"
+          HOME="$home" LAZYCODE_SOURCE="$GITHUB_WORKSPACE" sh install.sh
+      - name: Run suite
+        run: tests/headless.sh "${{ matrix.suite }}"
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: logs-${{ matrix.suite }}
+          path: /tmp/lazycode-tests.*/*.log
+          if-no-files-found: ignore
+
+  install-linux:
+    name: Install (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: debian:stable
+            setup: apt-get update && apt-get install -y curl git xz-utils gcc make ca-certificates
+          - image: ubuntu:24.04
+            setup: apt-get update && apt-get install -y curl git xz-utils gcc make ca-certificates
+          - image: fedora:latest
+            setup: dnf install -y curl git xz gcc make tar gzip findutils shadow-utils util-linux
+          - image: archlinux:latest
+            setup: pacman -Syu --noconfirm curl git xz gcc make tar gzip
+    steps:
+      - name: System packages
+        run: ${{ matrix.setup }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install, check and remove as a regular user
+        run: |
+          useradd -m tester
+          cp -R "$GITHUB_WORKSPACE" /home/tester/source
+          chown -R tester /home/tester/source
+          su - tester -c 'LAZYCODE_SKIP_TOOLS=1 LAZYCODE_SOURCE=$HOME/source sh source/install.sh'
+          su - tester -c '.local/bin/lazycode doctor'
+          su - tester -c '.local/bin/lazycode uninstall --yes && test ! -e .local/bin/lazycode'
+
+  install-arm:
+    name: Install (Linux arm64)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install, check and remove
+        run: |
+          export HOME="$RUNNER_TEMP/home"
+          mkdir -p "$HOME"
+          LAZYCODE_SKIP_TOOLS=1 LAZYCODE_SOURCE="$GITHUB_WORKSPACE" sh install.sh
+          "$HOME/.local/bin/lazycode" doctor
+          "$HOME/.local/bin/lazycode" uninstall --yes
+          test ! -e "$HOME/.local/bin/lazycode"
+
+  install-macos:
+    name: Install (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-latest, macos-15-intel]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install, check and remove
+        run: |
+          export HOME="$RUNNER_TEMP/home"
+          mkdir -p "$HOME"
+          LAZYCODE_SKIP_TOOLS=1 LAZYCODE_SOURCE="$GITHUB_WORKSPACE" sh install.sh
+          "$HOME/.local/bin/lazycode" doctor
+          test -x "$HOME/Applications/LazyCode.app/Contents/MacOS/LazyCode"
+          "$HOME/.local/bin/lazycode" uninstall --yes
+          test ! -e "$HOME/.local/bin/lazycode"
+
+  homebrew:
+    name: Homebrew formula
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build, install and test the formula
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+        run: |
+          version=$(cat VERSION)
+          archive="$RUNNER_TEMP/lazycode-$version.tar.gz"
+          git archive --format=tar.gz --prefix="lazycode-$version/" -o "$archive" HEAD
+          sha=$(shasum -a 256 "$archive" | cut -d' ' -f1)
+          brew tap-new --no-git local/lazycode
+          tap="$(brew --repository)/Library/Taps/local/homebrew-lazycode"
+          sed -e "s|@OWNER@|$GITHUB_REPOSITORY_OWNER|g" -e "s|@VERSION@|$version|g" -e "s|@SHA256@|$sha|g" \
+            -e "s|^  url .*|  url \"file://$archive\"|" packaging/homebrew/lazycode.rb > "$tap/Formula/lazycode.rb"
+          brew install --formula local/lazycode/lazycode
+          brew test local/lazycode/lazycode
+
+  ci-ok:
+    name: CI OK
+    if: always()
+    needs: [lint, e2e, install-linux, install-arm, install-macos, homebrew]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Every job must pass
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "$RESULTS"
+          for result in $RESULTS; do
+            [ "$result" = success ] || exit 1
+          done

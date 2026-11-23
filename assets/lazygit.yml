@@ -1,0 +1,7 @@
+disableStartupPopups: true
+gui:
+  mouseEvents: true
+  portraitMode: always
+  showBottomLine: false
+  showRandomTip: false
+  nerdFontsVersion: "3"

@@ -1,0 +1,168 @@
+#!/bin/sh
+# LazyCode launcher and management commands.
+set -u
+
+self=$0
+while [ -L "$self" ]; do
+  target=$(readlink "$self")
+  case "$target" in
+    /*) self=$target ;;
+    *) self=$(dirname "$self")/$target ;;
+  esac
+done
+APP=$(cd "$(dirname "$self")/.." && pwd)
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/lazycode"
+DATA="${XDG_DATA_HOME:-$HOME/.local/share}"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}"
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}"
+RUNTIME="${LAZYCODE_RUNTIME:-$DATA/lazycode-runtime}"
+REPO=$(sed -n 's/^repo=//p' "$APP/.lazycode" 2>/dev/null)
+
+version() {
+  cat "$APP/VERSION" 2>/dev/null || echo unknown
+}
+
+use_runtime() {
+  LAZYCODE_USER_PATH=$PATH
+  export LAZYCODE_USER_PATH NVIM_APPNAME=lazycode
+  if [ -x "$RUNTIME/bin/nvim" ]; then
+    PATH="$RUNTIME/bin:$PATH"
+    LAZYCODE_RUNTIME=$RUNTIME
+    export PATH LAZYCODE_RUNTIME
+  fi
+}
+
+launch() {
+  # Homebrew keeps the app outside ~/.config: prepare it on first use.
+  if [ ! -f "$CONFIG/.lazycode" ] && [ -x "$APP/install.sh" ]; then
+    LAZYCODE_SOURCE=$APP "$APP/install.sh" || exit 1
+  fi
+  if [ "$#" -eq 1 ] && [ -d "$1" ]; then
+    cd -- "$1" || exit 1
+    set --
+    LAZYCODE_START=folder
+  else
+    LAZYCODE_START=welcome
+  fi
+  export LAZYCODE_START
+  use_runtime
+  if ! command -v kitty >/dev/null 2>&1 || ! command -v nvim >/dev/null 2>&1; then
+    echo "LazyCode is not fully installed. Run: lazycode doctor" >&2
+    exit 1
+  fi
+  if command -v setsid >/dev/null 2>&1; then
+    setsid -f "$self" __window "$@" </dev/null >/dev/null 2>&1
+  else
+    nohup "$self" __window "$@" </dev/null >/dev/null 2>&1 &
+  fi
+}
+
+# Runs the window. Some Wayland drivers cannot start kitty: retry through XWayland.
+window() {
+  started=$(date +%s)
+  kitty --config "$CONFIG/assets/kitty.conf" --class lazycode --title LazyCode nvim "$@"
+  code=$?
+  if [ "$code" -ne 0 ] && [ "$(uname -s)" = Linux ] && [ -n "${DISPLAY:-}" ] &&
+    [ $(($(date +%s) - started)) -le 3 ]; then
+    kitty --config "$CONFIG/assets/kitty.conf" -o linux_display_server=x11 --class lazycode --title LazyCode nvim "$@"
+  fi
+}
+
+doctor() {
+  use_runtime
+  status=0
+  echo "LazyCode $(version) on $(uname -s) $(uname -m)"
+  for tool in nvim kitty lazygit rg fd node git; do
+    found=$(command -v "$tool" 2>/dev/null || true)
+    if [ -z "$found" ] && [ "$tool" = fd ]; then
+      found=$(command -v fdfind 2>/dev/null || true) # Debian and Ubuntu name
+    fi
+    if [ -n "$found" ]; then
+      printf '  ok      %-8s %s\n' "$tool" "$found"
+    else
+      printf '  MISSING %s\n' "$tool"
+      status=1
+    fi
+  done
+  if command -v cc >/dev/null 2>&1 || command -v gcc >/dev/null 2>&1 || command -v clang >/dev/null 2>&1; then
+    echo "  ok      C compiler"
+  else
+    echo "  WARNING no C compiler: syntax parsers cannot be built"
+  fi
+  if [ -f "$CONFIG/.lazycode" ]; then
+    echo "  ok      config   $CONFIG"
+  else
+    echo "  MISSING config   $CONFIG"
+    status=1
+  fi
+  count=$(find "$DATA/lazycode/mason/packages" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ')
+  echo "  info    $count language tools installed"
+  return "$status"
+}
+
+update() {
+  if [ -d "$CONFIG/.git" ]; then
+    echo "This is a development checkout. Update it with: git -C \"$CONFIG\" pull" >&2
+    return 1
+  fi
+  if command -v brew >/dev/null 2>&1 && brew list lazycode >/dev/null 2>&1; then
+    brew upgrade lazycode && LAZYCODE_SOURCE=$(brew --prefix lazycode)/libexec "$(brew --prefix lazycode)/libexec/install.sh"
+    return
+  fi
+  curl -fsSL "https://raw.githubusercontent.com/$REPO/main/install.sh" | sh
+}
+
+uninstall() {
+  answer=n
+  if [ "${1:-}" = "--yes" ]; then
+    answer=y
+  elif [ -t 0 ]; then
+    printf 'Also delete LazyCode settings, plugins and language tools? [y/N] '
+    read -r answer || answer=n
+  fi
+  manifest="$RUNTIME/manifest"
+  if [ -f "$manifest" ]; then
+    while IFS= read -r path; do
+      case "$path" in
+        "$HOME"/*) rm -rf -- "$path" ;;
+      esac
+    done <"$manifest"
+  fi
+  rm -rf -- "$RUNTIME"
+  case "$answer" in
+    y | Y | yes)
+      rm -rf -- "$DATA/lazycode" "$STATE/lazycode" "$CACHE/lazycode"
+      if [ -d "$CONFIG/.git" ]; then
+        echo "Kept $CONFIG because it is a Git checkout."
+      else
+        rm -rf -- "$CONFIG"
+      fi
+      ;;
+  esac
+  echo "LazyCode was removed."
+}
+
+usage() {
+  cat <<EOF
+LazyCode $(version)
+
+Usage:
+  lazycode              Open the Welcome screen
+  lazycode <folder>     Open a folder as a project
+  lazycode <file>...    Open files
+  lazycode doctor       Check the installation
+  lazycode update       Update LazyCode
+  lazycode uninstall    Remove LazyCode (--yes to also delete its data)
+  lazycode version      Show the version
+EOF
+}
+
+case "${1:-}" in
+  __window) shift; window "$@" ;;
+  doctor) doctor ;;
+  update) update ;;
+  uninstall) shift; uninstall "$@" ;;
+  version | --version | -v) version ;;
+  help | --help | -h) usage ;;
+  *) launch "$@" ;;
+esac

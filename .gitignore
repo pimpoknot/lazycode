@@ -1,0 +1,11 @@
+tt.*
+.tests
+doc/tags
+debug
+.repro
+foo.*
+*.log
+data
+__pycache__/
+*.pyc
+.DS_Store

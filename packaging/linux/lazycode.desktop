@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=LazyCode
+GenericName=Code Editor
+Comment=A lightweight IDE with the power and look of LazyVim
+Exec=@LAZYCODE@ %F
+Icon=lazycode
+Terminal=false
+Categories=Development;IDE;
+StartupWMClass=lazycode
