@@ -32,7 +32,11 @@ A full install uses about 1.2 GB, most of it language servers. To skip them:
 curl -fsSL https://raw.githubusercontent.com/pimpoknot/lazycode/main/install.sh | LAZYCODE_SKIP_TOOLS=1 sh
 ```
 
-A Homebrew formula is planned for the first stable release.
+On macOS and Linux you can also use Homebrew:
+
+```sh
+brew install pimpoknot/tap/lazycode
+```
 
 ## Use
 

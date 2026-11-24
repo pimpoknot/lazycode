@@ -128,9 +128,6 @@ local function fix_layout()
   if vim.api.nvim_win_get_width(bar_win) ~= BAR_WIDTH then
     vim.api.nvim_win_set_width(bar_win, BAR_WIDTH)
   end
-  if lg and lg:win_valid() and vim.api.nvim_win_get_width(lg.win) ~= M.width then
-    vim.api.nvim_win_set_width(lg.win, M.width)
-  end
   require("lazycode.welcome").fix_layout()
   M.render()
 end
@@ -159,7 +156,21 @@ local function show(id, opts)
   else
     lg = Snacks.lazygit({
       cwd = LazyVim.root.git(),
-      win = { position = "left", width = M.width, border = "none", enter = true },
+      -- Covers the editor but not the activity bar, so lazygit has room for its diff on the right.
+      win = {
+        position = "float",
+        backdrop = false,
+        border = "none",
+        enter = true,
+        row = 1,
+        col = BAR_WIDTH + 1,
+        width = function()
+          return vim.o.columns - BAR_WIDTH - 1
+        end,
+        height = function()
+          return vim.o.lines - vim.o.cmdheight - 2
+        end,
+      },
     })
     vim.schedule(function()
       if lg and lg:win_valid() and vim.api.nvim_get_current_win() == lg.win then
