@@ -133,6 +133,13 @@ jobs:
           LAZYCODE_SKIP_TOOLS=1 LAZYCODE_SOURCE="$GITHUB_WORKSPACE" sh install.sh
           "$HOME/.local/bin/lazycode" doctor
           test -x "$HOME/Applications/LazyCode.app/Contents/MacOS/LazyCode"
+          # kitty validates the launcher's real arguments, and --version stops before opening a window.
+          bin="$HOME/.local/share/lazycode-runtime/bin"
+          mv "$bin/kitty" "$bin/kitty.real"
+          printf '#!/bin/sh\n"%s" --version "$@" && touch "%s"\n' "$bin/kitty.real" "$HOME/kitty-ok" > "$bin/kitty"
+          chmod +x "$bin/kitty"
+          PATH="$bin:$PATH" "$HOME/.local/bin/lazycode" __window
+          test -f "$HOME/kitty-ok"
           "$HOME/.local/bin/lazycode" uninstall --yes
           test ! -e "$HOME/.local/bin/lazycode"
 

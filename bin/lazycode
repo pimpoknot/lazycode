@@ -50,21 +50,26 @@ launch() {
     echo "LazyCode is not fully installed. Run: lazycode doctor" >&2
     exit 1
   fi
+  log="$STATE/lazycode/launcher.log"
+  mkdir -p "$STATE/lazycode"
   if command -v setsid >/dev/null 2>&1; then
-    setsid -f "$self" __window "$@" </dev/null >/dev/null 2>&1
+    setsid -f "$self" __window "$@" </dev/null >"$log" 2>&1
   else
-    nohup "$self" __window "$@" </dev/null >/dev/null 2>&1 &
+    nohup "$self" __window "$@" </dev/null >"$log" 2>&1 &
   fi
 }
 
 # Runs the window. Some Wayland drivers cannot start kitty: retry through XWayland.
 window() {
   started=$(date +%s)
-  kitty --config "$CONFIG/assets/kitty.conf" --class lazycode --title LazyCode nvim "$@"
+  set -- --title LazyCode nvim "$@"
+  # kitty rejects --class on macOS.
+  [ "$(uname -s)" = Linux ] && set -- --class lazycode "$@"
+  kitty --config "$CONFIG/assets/kitty.conf" "$@"
   code=$?
   if [ "$code" -ne 0 ] && [ "$(uname -s)" = Linux ] && [ -n "${DISPLAY:-}" ] &&
     [ $(($(date +%s) - started)) -le 3 ]; then
-    kitty --config "$CONFIG/assets/kitty.conf" -o linux_display_server=x11 --class lazycode --title LazyCode nvim "$@"
+    kitty --config "$CONFIG/assets/kitty.conf" -o linux_display_server=x11 "$@"
   fi
 }
 

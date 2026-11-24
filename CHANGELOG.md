@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.0
+
+First stable release.
+
+- Fix the app not opening on macOS, where kitty has no `--class` option
+- Open lazygit across the whole editor area, with the diff on the right
+- Keep launcher errors in `~/.local/state/lazycode/launcher.log`
+
 ## 0.1.0-rc.1
 
 First public release candidate.
