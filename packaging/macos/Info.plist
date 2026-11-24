@@ -5,14 +5,14 @@
   <key>CFBundleExecutable</key>
   <string>LazyCode</string>
   <key>CFBundleIdentifier</key>
-  <string>dev.lazycode.launcher</string>
+  <string>dev.lazycode.app</string>
   <key>CFBundleName</key>
   <string>LazyCode</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
   <string>0.1.0</string>
-  <key>LSUIElement</key>
+  <key>NSHighResolutionCapable</key>
   <true/>
 </dict>
 </plist>

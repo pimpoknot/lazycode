@@ -1,0 +1,52 @@
+name: App
+
+# Builds the native window once per platform. CI and Release call it and download the
+# `app-<os>-<arch>` artifacts it uploads.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Window (${{ matrix.os }} ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Ubuntu 22.04 keeps the glibc requirement low for older distributions.
+          - { runner: ubuntu-22.04, os: linux, arch: x86_64, lint: true }
+          - { runner: ubuntu-22.04-arm, os: linux, arch: arm64 }
+          - { runner: macos-latest, os: macos, arch: arm64 }
+          - { runner: macos-15-intel, os: macos, arch: x86_64 }
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Rust
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --component clippy,rustfmt
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          else
+            rustup update stable --no-self-update
+            rustup component add clippy rustfmt
+          fi
+      - name: Format and lint
+        if: matrix.lint
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --locked
+      - name: Build
+        run: cargo build --release --locked
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: app-${{ matrix.os }}-${{ matrix.arch }}
+          path: app/target/release/lazycode-app
+          if-no-files-found: error

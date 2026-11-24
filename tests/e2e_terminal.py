@@ -1,13 +1,15 @@
 import json, os, signal, subprocess, sys, tempfile, time
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import appctl
 work=tempfile.mkdtemp(prefix="lazycode-term-",dir=None)
 proj=work+"/p"; os.makedirs(proj); open(proj+"/a.txt","w").write("x\n"); out=work+"/out"
-nsock=os.path.join(tempfile.gettempdir(),"lct%d.sock"%os.getpid()); ksock="@lc-term-%d"%os.getpid()
+nsock=os.path.join(tempfile.gettempdir(),"lct%d.sock"%os.getpid())
 clip="lua local f=vim.env.LC_CLIP; vim.g.clipboard={name='e2e',copy={['+']={'sh','-c','cat > '..f},['*']={'sh','-c','cat > '..f}},paste={['+']={'sh','-c','cat '..f..' 2>/dev/null'},['*']={'sh','-c','cat '..f..' 2>/dev/null'}}}"
-kitty=subprocess.Popen(["kitty","--config",os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "lazycode/assets/kitty.conf"),"-o","allow_remote_control=yes","--listen-on","unix:"+ksock,"--class","lazycode-test","--directory",proj,"env","NVIM_APPNAME=lazycode","LC_CLIP="+work+"/clip","SHELL=/bin/bash","nvim","--cmd","set shell=/bin/bash","--cmd",clip,"--listen",nsock,"a.txt"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+app=appctl.App(["--cmd","set shell=/bin/bash","--cmd",clip,"--listen",nsock,"a.txt"],proj,env=dict(os.environ,NVIM_APPNAME="lazycode",LAZYCODE_START="",LC_CLIP=work+"/clip",SHELL="/bin/bash"))
 def finish(c):
     try: subprocess.run(["nvim","--clean","--headless","--server",nsock,"--remote-expr","execute('qa!')"],capture_output=True,timeout=3)
     except Exception: pass
-    time.sleep(.3); kitty.terminate()
+    time.sleep(.3); app.close()
     try: os.unlink(nsock)
     except OSError: pass
     __import__('shutil').rmtree(work, ignore_errors=True); os._exit(c)
@@ -19,7 +21,7 @@ def lua(c,limit=8):
     o=(r.stdout+r.stderr).strip()
     try: return json.loads(o)
     except Exception: return o
-kc=lambda a: subprocess.run(["kitty","@","--to","unix:"+ksock]+a,capture_output=True,text=True).stdout
+kc=app.kc
 screen=lambda: kc(["get-text"])
 def until(f,limit=6):
     t=time.time()

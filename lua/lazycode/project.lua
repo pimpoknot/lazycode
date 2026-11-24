@@ -302,4 +302,71 @@ function M.clone()
   end)
 end
 
+local function unsaved()
+  return vim.tbl_filter(function(buf)
+    return vim.bo[buf].modified and vim.bo[buf].buftype == ""
+  end, vim.api.nvim_list_bufs())
+end
+
+local function reload_path()
+  return vim.fn.stdpath("state") .. "/lazycode_reload.json"
+end
+
+--- Reload Window, like VS Code: restarts Neovim in the same window, folder and open files.
+function M.reload()
+  if #unsaved() > 0 then
+    if vim.fn.confirm("Save changes before reloading the window?", "&Save All\n&Cancel", 1) ~= 1 then
+      return
+    end
+    vim.cmd("silent! wall")
+    if #unsaved() > 0 then
+      return notify("Some files could not be saved, so the window was not reloaded", vim.log.levels.ERROR)
+    end
+  end
+  -- Focus the editor: it holds the active file, and the QuitPre in sidebar.lua closes the
+  -- panels, where quitting from a closed window would abort.
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    local buf = vim.api.nvim_win_get_buf(win)
+    if vim.api.nvim_win_get_config(win).relative == "" and vim.bo[buf].buftype == "" then
+      vim.api.nvim_set_current_win(win)
+      break
+    end
+  end
+  local files, current = {}, vim.api.nvim_buf_get_name(0)
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    local name = vim.api.nvim_buf_get_name(buf)
+    if vim.bo[buf].buflisted and vim.bo[buf].buftype == "" and name ~= "" and name ~= current then
+      files[#files + 1] = name
+    end
+  end
+  if vim.bo.buftype == "" and current ~= "" then
+    files[#files + 1] = current -- opened last, so it is the active tab again
+  end
+  local fd = io.open(reload_path(), "w")
+  if fd then
+    fd:write(vim.json.encode(files))
+    fd:close()
+  end
+  -- The new Neovim inherits this environment and working directory.
+  vim.env.LAZYCODE_START = M.folder and "folder" or "welcome"
+  -- Files are saved by now; qall! only skips terminals and prompts that would block :qall.
+  vim.cmd("restart +qall! lua require('lazycode.project').reopen()")
+end
+
+--- Runs in the restarted Neovim: opens the files that were open before Reload Window.
+function M.reopen()
+  local fd = io.open(reload_path(), "r")
+  if not fd then
+    return
+  end
+  local ok, files = pcall(vim.json.decode, fd:read("*a"))
+  fd:close()
+  os.remove(reload_path())
+  for _, file in ipairs(ok and files or {}) do
+    if uv.fs_stat(file) then
+      vim.cmd.edit(vim.fn.fnameescape(file))
+    end
+  end
+end
+
 return M

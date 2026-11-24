@@ -50,8 +50,6 @@ check_requirements() {
   need gzip "$hint"
   if [ "$OS" = linux ]; then
     need xz "Install the xz package (xz-utils on Debian/Ubuntu)."
-  else
-    need hdiutil "It ships with macOS."
   fi
   command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 ||
     die "sha256sum or shasum is required."
@@ -116,14 +114,6 @@ link_tool() {
   ln -sf "$1" "$RUNTIME/bin/$2"
 }
 
-install_kitty_macos() {
-  mount="$WORK/kitty-mount"
-  mkdir -p "$mount"
-  hdiutil attach -quiet -nobrowse -readonly -mountpoint "$mount" "$1"
-  cp -R "$mount/kitty.app" "$2/"
-  hdiutil detach -quiet "$mount"
-}
-
 install_tool() {
   tool=$1 tool_version=$2 expected=$3 url=$4
   target="$RUNTIME/$tool"
@@ -139,8 +129,7 @@ install_tool() {
   rm -rf -- "$staging"
   mkdir -p "$staging"
   case "$tool:$OS" in
-    kitty:macos) install_kitty_macos "$file" "$staging" ;;
-    kitty:linux) tar -xJf "$file" -C "$staging" ;;
+    fonts:*) tar -xJf "$file" -C "$staging" ;;
     lazygit:*) tar -xzf "$file" -C "$staging" ;;
     *) tar -xzf "$file" -C "$staging" --strip-components=1 ;;
   esac
@@ -171,14 +160,42 @@ install_runtime() {
   link_tool "$RUNTIME/node/bin/node" node
   link_tool "$RUNTIME/node/bin/npm" npm
   link_tool "$RUNTIME/node/bin/npx" npx
-  if [ "$OS" = macos ]; then
-    kitty_bin="$RUNTIME/kitty/kitty.app/Contents/MacOS/kitty"
+  rm -rf -- "$RUNTIME/kitty" "$RUNTIME/bin/kitty" # left by LazyCode 0.1
+  install_window
+}
+
+# The native window: built by Homebrew, downloaded from the matching release, or built here.
+install_window() {
+  target="$RUNTIME/bin/lazycode-app"
+  version=$(cat "$SOURCE/VERSION")
+  if [ -x "$SOURCE/bin/lazycode-app" ]; then
+    cp "$SOURCE/bin/lazycode-app" "$target.new"
+  elif [ ! -d "$SOURCE/.git" ] && download_window "$version"; then
+    :
+  elif command -v cargo >/dev/null 2>&1; then
+    info "Building the LazyCode window (this can take a few minutes)"
+    cargo build --release --locked --quiet --manifest-path "$SOURCE/app/Cargo.toml" \
+      --target-dir "$WORK/target" || die "Could not build the LazyCode window."
+    cp "$WORK/target/release/lazycode-app" "$target.new"
   else
-    kitty_bin="$RUNTIME/kitty/bin/kitty"
+    die "No LazyCode window for $OS $ARCH in version $version. Install Rust from https://rustup.rs and run again."
   fi
-  rm -f -- "$RUNTIME/bin/kitty"
-  printf '#!/bin/sh\nexec "%s" "$@"\n' "$kitty_bin" >"$RUNTIME/bin/kitty"
-  chmod +x "$RUNTIME/bin/kitty"
+  chmod +x "$target.new"
+  mv -f "$target.new" "$target"
+}
+
+download_window() {
+  name="lazycode-app-$1-$OS-$ARCH.tar.gz"
+  base="https://github.com/$REPO/releases/download/v$1"
+  curl -fsSL "$base/SHA256SUMS" -o "$WORK/SHA256SUMS" 2>/dev/null || return 1
+  expected=$(awk -v n="$name" '$2 == n { print $1 }' "$WORK/SHA256SUMS")
+  [ -n "$expected" ] || return 1
+  info "Downloading the LazyCode window"
+  curl -fL --retry 3 --progress-bar "$base/$name" -o "$WORK/$name" || die "Could not download the LazyCode window."
+  actual=$(sha256 "$WORK/$name")
+  [ "$actual" = "$expected" ] || die "Checksum mismatch for $name: expected $expected, got $actual."
+  tar -xzf "$WORK/$name" -C "$WORK"
+  mv "$WORK/lazycode-app" "$target.new"
 }
 
 install_app() {
@@ -206,7 +223,7 @@ install_app() {
   staging="$CONFIG.staging"
   rm -rf -- "$staging"
   mkdir -p "$staging"
-  (cd "$SOURCE" && tar --exclude=./.git --exclude=./tests --exclude=./.github -cf - .) | (cd "$staging" && tar -xf -)
+  (cd "$SOURCE" && tar --exclude=./.git --exclude=./tests --exclude=./.github --exclude=./app/target --exclude=./bin/lazycode-app -cf - .) | (cd "$staging" && tar -xf -)
   mv "$staging" "$CONFIG"
   chmod +x "$CONFIG/bin/lazycode" "$CONFIG/install.sh"
   if [ -n "$OLD_EXTRAS" ]; then
@@ -235,8 +252,8 @@ install_launchers() {
     rm -rf -- "$bundle"
     mkdir -p "$bundle/Contents/MacOS"
     cp "$CONFIG/packaging/macos/Info.plist" "$bundle/Contents/Info.plist"
-    printf '#!/bin/sh\nexec "%s"\n' "$BIN_DIR/lazycode" >"$bundle/Contents/MacOS/LazyCode"
-    chmod +x "$bundle/Contents/MacOS/LazyCode"
+    # The window itself lives in the bundle, so the Dock shows LazyCode.
+    cp "$RUNTIME/bin/lazycode-app" "$bundle/Contents/MacOS/LazyCode"
     printf '%s\n' "$bundle" >>"$RUNTIME/manifest"
   fi
 }

@@ -216,6 +216,11 @@ function M.render_side()
   paint(side_buf, rows)
 end
 
+--- True when a line of the Welcome tab or its side panel runs something on click.
+function M.clickable(buffer, line)
+  return (buffer == buf and actions[line] or buffer == side_buf and side_actions[line]) ~= nil
+end
+
 local function click(get)
   return function()
     local pos = vim.fn.getmousepos()

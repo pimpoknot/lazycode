@@ -8,8 +8,13 @@ permissions:
   contents: read
 
 jobs:
+  app:
+    name: App
+    uses: ./.github/workflows/app.yml
+
   build:
     name: Build package
+    needs: app
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -32,9 +37,14 @@ jobs:
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
           grep -qx "## $version" CHANGELOG.md
           grep -q "<string>${version%%-*}</string>" packaging/macos/Info.plist
+          grep -qx "version = \"$version\"" app/Cargo.toml
           case "$version" in *-*) prerelease=true ;; *) prerelease=false ;; esac
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: app-*
+          path: windows
       - name: Build the package and checksums
         env:
           VERSION: ${{ steps.meta.outputs.version }}
@@ -42,7 +52,14 @@ jobs:
           mkdir dist
           git archive --format=tar.gz --prefix="lazycode-$VERSION/" -o "dist/lazycode-$VERSION.tar.gz" "$GITHUB_SHA"
           cp install.sh dist/install.sh
-          (cd dist && sha256sum "lazycode-$VERSION.tar.gz" install.sh > SHA256SUMS)
+          # install.sh downloads lazycode-app-<version>-<os>-<arch>.tar.gz and checks it against SHA256SUMS.
+          for dir in windows/app-*; do
+            platform=${dir#windows/app-}
+            chmod +x "$dir/lazycode-app"
+            tar -czf "dist/lazycode-app-$VERSION-$platform.tar.gz" -C "$dir" lazycode-app
+          done
+          test "$(ls dist/lazycode-app-* | wc -l)" -eq 4
+          (cd dist && sha256sum -- * > SHA256SUMS)
           awk -v heading="## $VERSION" '$0 == heading { found = 1; next } /^## / { found = 0 } found' CHANGELOG.md > notes.md
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2

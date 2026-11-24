@@ -4,9 +4,11 @@ local M = {}
 --- Installed with LazyCode so completion works out of the box.
 M.tools = {
   "bash-language-server",
+  "copilot-language-server",
   "css-lsp",
   "docker-compose-language-service",
   "dockerfile-language-server",
+  "eslint-lsp",
   "hadolint",
   "html-lsp",
   "json-lsp",
@@ -14,6 +16,7 @@ M.tools = {
   "markdown-toc",
   "markdownlint-cli2",
   "marksman",
+  "prettier",
   "pyright",
   "ruff",
   "shfmt",
@@ -27,7 +30,6 @@ M.tools = {
 -- filetype = { extra, display name, required toolchain }
 local OPTIONAL = {
   go = { "lang.go", "Go", "go" },
-  rust = { "lang.rust", "Rust", "cargo" },
   php = { "lang.php", "PHP", "php" },
   java = { "lang.java", "Java", "java" },
   ruby = { "lang.ruby", "Ruby", "ruby" },

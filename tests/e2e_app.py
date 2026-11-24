@@ -1,10 +1,12 @@
 import json, os, subprocess, sys, tempfile, time
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import appctl
 
 base = None
 work = tempfile.mkdtemp(prefix="lazycode-real-", dir=base)
 repo = os.path.join(work, "repo")
 os.mkdir(repo)
-nsock, ksock = os.path.join(work, "n.sock"), "@lc-e2e-%d" % os.getpid()
+nsock = os.path.join(work, "n.sock")
 sample, other = os.path.join(repo, "sample.txt"), os.path.join(repo, "other.txt")
 open(sample, "w").write("alpha beta\nbeta gamma\nthird line\n")
 open(other, "w").write("other file\n")
@@ -12,10 +14,8 @@ for cmd in (["init", "-q"], ["config", "user.name", "e2e"], ["config", "user.ema
     subprocess.run(["git"] + cmd, cwd=repo, check=True)
 
 env = dict(os.environ, NVIM_APPNAME="lazycode", LC_CLIP=os.path.join(work,"clip"))
-kitty = subprocess.Popen(["kitty", "--config", os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "lazycode/assets/kitty.conf"),
-    "-o", "allow_remote_control=yes", "--listen-on", "unix:" + ksock, "--class", "lazycode-test",
-    "--directory", repo, "nvim", "--cmd","lua vim.g.clipboard={name='e2e',copy={['+']={'sh','-c','cat > '..vim.env.LC_CLIP},['*']={'sh','-c','cat > '..vim.env.LC_CLIP}},paste={['+']={'sh','-c','cat '..vim.env.LC_CLIP..' 2>/dev/null'},['*']={'sh','-c','cat '..vim.env.LC_CLIP..' 2>/dev/null'}}}", "--listen", nsock, sample], env=env,
-    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+app = appctl.App(["--cmd","lua vim.g.clipboard={name='e2e',copy={['+']={'sh','-c','cat > '..vim.env.LC_CLIP},['*']={'sh','-c','cat > '..vim.env.LC_CLIP}},paste={['+']={'sh','-c','cat '..vim.env.LC_CLIP..' 2>/dev/null'},['*']={'sh','-c','cat '..vim.env.LC_CLIP..' 2>/dev/null'}}}", "--listen", nsock, sample], repo, env=dict(env, LAZYCODE_START=""), stderr=subprocess.PIPE)
+proc = app.proc
 
 def _crash(t, v, tb):
     import traceback; traceback.print_exception(t, v, tb); finish(4)
@@ -40,13 +40,13 @@ def finish(code):
     except Exception:
         pass
     time.sleep(.3)
-    kitty.terminate()
+    app.close()
     os._exit(code)
 
 for _ in range(80):
     time.sleep(.25)
-    if kitty.poll() is not None:
-        print("kitty exited:", kitty.stderr.read()[:500]); finish(3)
+    if proc.poll() is not None:
+        print("app exited:", proc.stderr.read()[:500]); finish(3)
     if os.path.exists(nsock) and lua("return package.loaded['lazycode.sidebar'] ~= nil and vim.o.keymodel") == "startsel,stopsel":
         break
 else:
@@ -62,9 +62,7 @@ def check(name, got, want):
         print("   state:", lua("local e=require('lazycode.editing'); return {m=vim.api.nvim_get_mode().mode, st=vim.fn.state(), ft=vim.bo.filetype, bt=vim.bo.buftype, mc=e.mc_active==true, n=e.cursor_count(), mod=vim.bo.modifiable}"))
 
 def _kc(args):
-    r = subprocess.run(["kitty", "@", "--to", "unix:" + ksock] + args, capture_output=True, text=True)
-    if r.returncode:
-        print("kitty @ failed:", r.stderr[:300]); finish(5)
+    app.kc(args)
 
 def key(*names, wait=.5):
     _kc(["send-key"] + list(names))
@@ -120,21 +118,21 @@ def text_cell(line, col):
     p = lua(f"return vim.fn.screenpos({w},{line},{col})")
     return p["row"] - 1, p["col"] - 1
 
-# --- Real keyboard through kitty
-check("kitty opens ready to type", mode(), "i")
-reset(); key("ctrl+shift+g", wait=2.5); check("kitty: Ctrl+Shift+G opens lazygit", ft(), "snacks_terminal")
-key("ctrl+shift+e", wait=1); check("kitty: Ctrl+Shift+E opens Explorer", active(), "explorer")
-key("ctrl+shift+f", wait=1); check("kitty: Ctrl+Shift+F opens Search", active(), "search")
+# --- Real keyboard through the app window
+check("app opens ready to type", mode(), "i")
+reset(); key("ctrl+shift+g", wait=2.5); check("keyboard: Ctrl+Shift+G opens lazygit", ft(), "snacks_terminal")
+key("ctrl+shift+e", wait=1); check("keyboard: Ctrl+Shift+E opens Explorer", active(), "explorer")
+key("ctrl+shift+f", wait=1); check("keyboard: Ctrl+Shift+F opens Search", active(), "search")
 key("ctrl+shift+e", wait=1)
-reset(); key("ctrl+shift+p", wait=.8); check("kitty: Ctrl+Shift+P opens palette", ft(), "snacks_picker_input"); key("escape", wait=.5)
-reset(); key("ctrl+p", wait=.8); check("kitty: Ctrl+P opens files", ft(), "snacks_picker_input"); key("escape", wait=.5)
-reset(); key("ctrl+shift+k", wait=.4); check("kitty: Ctrl+Shift+K", text(), ["beta gamma", "third line"])
-reset(); key("alt+down", wait=.4); check("kitty: Alt+Down", text()[:2], ["beta gamma", "alpha beta"])
-reset(); key("shift+right", "shift+right", wait=.3); check("kitty: Shift+arrows", mode(), "s"); text_in("Z"); check("kitty: typing replaces", text()[0], "Zpha beta")
-reset(); key("ctrl+a", wait=.4); check("kitty: Ctrl+A", mode(), "s"); key("escape", wait=.3)
-reset(); key("ctrl+z", wait=.3); check("kitty: Ctrl+Z does not suspend", kitty.poll() is None and mode() == "i", True)
-reset(); key("ctrl+`", wait=1); check("kitty: Ctrl+` opens terminal", lua("return vim.bo.buftype"), "terminal"); key("ctrl+`", wait=.6)
-reset(); key("ctrl+k", "ctrl+s", wait=.8); check("kitty: Ctrl+K Ctrl+S opens shortcuts", ft(), "snacks_picker_input"); key("escape", wait=.5)
+reset(); key("ctrl+shift+p", wait=.8); check("keyboard: Ctrl+Shift+P opens palette", ft(), "snacks_picker_input"); key("escape", wait=.5)
+reset(); key("ctrl+p", wait=.8); check("keyboard: Ctrl+P opens files", ft(), "snacks_picker_input"); key("escape", wait=.5)
+reset(); key("ctrl+shift+k", wait=.4); check("keyboard: Ctrl+Shift+K", text(), ["beta gamma", "third line"])
+reset(); key("alt+down", wait=.4); check("keyboard: Alt+Down", text()[:2], ["beta gamma", "alpha beta"])
+reset(); key("shift+right", "shift+right", wait=.3); check("keyboard: Shift+arrows", mode(), "s"); text_in("Z"); check("keyboard: typing replaces", text()[0], "Zpha beta")
+reset(); key("ctrl+a", wait=.4); check("keyboard: Ctrl+A", mode(), "s"); key("escape", wait=.3)
+reset(); key("ctrl+z", wait=.3); check("keyboard: Ctrl+Z does not suspend", proc.poll() is None and mode() == "i", True)
+reset(); key("ctrl+`", wait=1); check("keyboard: Ctrl+` opens terminal", lua("return vim.bo.buftype"), "terminal"); key("ctrl+`", wait=.6)
+reset(); key("ctrl+k", "ctrl+s", wait=.8); check("keyboard: Ctrl+K Ctrl+S opens shortcuts", ft(), "snacks_picker_input"); key("escape", wait=.5)
 
 # --- Mouse
 reset(); r, c = text_cell(1, 1); r2, c2 = text_cell(1, 6)
@@ -151,7 +149,7 @@ check("mouse: Ctrl+Click goes to definition", lua("return _G.__def"), 1)
 check("context menu", lua("return vim.fn.menu_info('PopUp.Copy','i').rhs ~= nil"), True)
 reset(); r, c = text_cell(1, 2)
 lua(f"vim.api.nvim_input_mouse('right','press','',0,{r},{c}) vim.api.nvim_input_mouse('right','release','',0,{r},{c}) return 1"); time.sleep(1.5)
-screen = subprocess.run(["kitty", "@", "--to", "unix:" + ksock, "get-text"], capture_output=True, text=True).stdout
+screen = app.kc(["get-text"])
 check("mouse: right click opens menu", all(w in screen for w in ("Cut", "Copy", "Paste", "Rename")), True); key("escape", wait=.4)
 
 # Activity bar
@@ -159,18 +157,79 @@ def bar():
     return lua("""for _,x in ipairs(vim.api.nvim_list_wins()) do if vim.bo[vim.api.nvim_win_get_buf(x)].filetype=='lazycode_bar' then
       local p=vim.api.nvim_win_get_position(x) return {p[1],p[2]} end end""")
 reset(); b = bar()
-click(b[0] + 5, b[1] + 1, wait=1.5); check("mouse: icon opens lazygit", active(), "git")
-click(b[0] + 3, b[1] + 1, wait=1); check("mouse: icon opens Search", active(), "search")
+# Icons sit on bar lines 2, 5, 8, 11, 14 and 17, and answer the lines around them too.
+click(b[0] + 7, b[1] + 1, wait=1.5); check("mouse: icon opens lazygit", active(), "git")
+click(b[0] + 5, b[1] + 1, wait=1); check("mouse: the line below the icon opens Search", active(), "search")
+check("Search is a side panel, not a picker", ft(), "grug-far")
+text_in("gamma", wait=1)
+def result_row():
+    for r, line in enumerate(app.screen().splitlines()):
+        i = line.find("beta gamma")
+        if 0 <= i < 50:
+            return r, i
+hit = None
+for _ in range(40):
+    hit = result_row()
+    if hit: break
+    time.sleep(.25)
+if hit:
+    click(hit[0], hit[1] + 2, wait=1)
+    check("Search: clicking a result opens it", (ft(), lua("return vim.api.nvim_win_get_cursor(0)[1]")), ("text", 2))
+else:
+    check("Search: result shown", app.screen(), "a 'beta gamma' result")
 click(b[0] + 1, b[1] + 1, wait=1); check("mouse: icon opens Explorer", active(), "explorer")
+check("Search panel closed", lua("return #vim.tbl_filter(function(w) return vim.bo[vim.api.nvim_win_get_buf(w)].filetype == 'grug-far' end, vim.api.nvim_list_wins())"), 0)
+click(b[0] + 10, b[1] + 1, wait=1); check("mouse: icon opens terminal", lua("return vim.bo.buftype"), "terminal")
+check("terminal keeps Explorer", active(), "explorer")
+click(b[0] + 10, b[1] + 1, wait=1); check("mouse: icon hides terminal", lua("return vim.bo.buftype") != "terminal", True)
+
+# Extensions: search and toggle a LazyVim extra, then put lazyvim.json back.
+saved = open(os.path.join(lua("return vim.fn.stdpath('config')"), "lazyvim.json")).read()
+wanted = lambda: lua("return vim.list_contains(LazyVim.config.json.data.extras, 'lazyvim.plugins.extras.lang.go')")
+key("ctrl+shift+x", wait=1); check("keyboard: Ctrl+Shift+X opens Extensions", active(), "extensions")
+text_in("lang.go", wait=.6); key("enter", wait=.6); check("Extensions: Enter enables an extra", wanted(), True)
+key("enter", wait=.6); check("Extensions: Enter again disables it", wanted(), False)
+open(os.path.join(lua("return vim.fn.stdpath('config')"), "lazyvim.json"), "w").write(saved)
+click(b[0] + 13, b[1] + 1, wait=1); check("mouse: icon closes Extensions", active(), None)
+click(b[0] + 1, b[1] + 1, wait=1); check("mouse: icon reopens Explorer", active(), "explorer")
 
 # Single click in the Explorer
 info = lua("""local p=Snacks.picker.get({source='explorer'})[1]
   for i,it in ipairs(p.list.items) do if it.file and it.file:match('other%.txt$') then
     local row=p.list:idx2row(i) local s=vim.fn.win_screenpos(p.list.win.win) return {s[1]-1+row-1, s[2]+3} end end""")
+def hover(row, col):
+    app.kc(["send-text", "\\x1b[<35;%d;%dM" % (col + 1, row + 1)]); time.sleep(.4)
+    return lua("return require('lazycode.mouse').shape")
 if isinstance(info, list):
+    check("hover: Explorer item shows a pointer", hover(info[0], info[1]), "pointer")
+    r, c = text_cell(1, 3); check("hover: editor text shows the text cursor", hover(r, c), "text")
+    low = lua("local w=Snacks.picker.get({source='explorer'})[1].list.win.win return vim.fn.win_screenpos(w)[1]-1+vim.api.nvim_win_get_height(w)-1")
+    check("hover: empty Explorer space is not clickable", hover(low, info[1]), "default")
+    check("hover: bar icon shows a pointer", hover(b[0] + 1, b[1] + 1), "pointer")
+    check("hover: empty bar shows the default cursor", hover(b[0] + 22, b[1] + 1), "default")
+    sep = lua("local p=Snacks.picker.get({source='explorer'})[1] local s=vim.fn.win_screenpos(p.list.win.win) return s[2]-1+vim.api.nvim_win_get_width(p.list.win.win)")
+    check("hover: panel border shows the resize cursor", hover(info[0], sep), "ew-resize")
+    # Dragging that border resizes the Explorer, then dragging back restores it.
+    width = lambda: lua("return vim.api.nvim_win_get_width(Snacks.picker.get({source='explorer'})[1].layout.root.win)")
+    def drag(row, a, b):
+        app.mouse(0, row, a, True); time.sleep(.2)
+        for c in range(a, b, 1 if b > a else -1):
+            app.mouse(32, row, c + (1 if b > a else -1), True); time.sleep(.05)
+        app.mouse(0, row, b, False); time.sleep(.6)
+    before = width(); drag(info[0], sep, sep + 6)
+    check("mouse: dragging the panel border resizes the Explorer", width() - before, 6)
+    drag(info[0], sep + 6, sep); check("mouse: dragging back restores it", width(), before)
     click(info[0], info[1], wait=.8); check("mouse: single click opens file", name(), "other.txt"); check("opened file ready to type", mode(), "i")
 else:
     check("mouse: explorer item", info, "list")
+
+# Focus: the window reports it, so FocusGained reloads files changed in other apps.
+lua("_G.lc_focus = {} vim.api.nvim_create_autocmd({'FocusGained','FocusLost'}, {callback=function(e) table.insert(_G.lc_focus, e.event) end}) return 1")
+root = appctl.xdotool("search", "--maxdepth", "0", "--name", "").split()
+if root:
+    appctl.xdotool("windowfocus", "--sync", root[0]); time.sleep(.5)
+appctl.xdotool("windowfocus", "--sync", app.window); time.sleep(.5)
+check("focus: lost and gained reach Neovim", lua("return _G.lc_focus"), ["FocusLost", "FocusGained"])
 
 # Tabs and statusline
 tab = lua("""for c=1,vim.o.columns-5 do local s='' for j=0,4 do s=s..vim.fn.screenstring(1,c+j) end if s=='sampl' then return c-1 end end""")
@@ -191,7 +250,7 @@ if active() != "git":
     key("ctrl+shift+g", wait=1.5)
 check("lazygit focused", mode(), "t")
 def snap(label):
-    t = subprocess.run(["kitty", "@", "--to", "unix:" + ksock, "get-text"], capture_output=True, text=True).stdout
+    t = app.kc(["get-text"])
     print(f"=== {label}"); print("\n".join(l[:56] for l in t.splitlines()[:30]))
 def until(fn, limit=8):
     t=time.time()
@@ -200,7 +259,7 @@ def until(fn, limit=8):
         if v: return v
         time.sleep(.05)
     return fn()
-screen_text=lambda: subprocess.run(["kitty","@","--to","unix:"+ksock,"get-text"],capture_output=True,text=True).stdout
+screen_text=lambda: app.kc(["get-text"])
 gitout=lambda *a: subprocess.run(["git"]+list(a),cwd=repo,capture_output=True,text=True).stdout
 if not until(lambda: "Files" in screen_text() and "Stash" in screen_text()):
     print("LAZYGIT DID NOT DRAW"); print(screen_text()[:900])
@@ -218,6 +277,16 @@ log = subprocess.run(["git", "log", "--format=%s"], cwd=repo, capture_output=Tru
 check("lazygit: stage e commit", log, "commit e2e")
 check("lazygit: clean tree", subprocess.run(["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True).stdout.strip(), "")
 
+# Reload Window: a new Neovim in the same window, with the same file open.
+lua("vim.cmd('silent! wall') vim.g.lazycode_before_reload = 1 return 1")
+old = lua("return vim.fn.getpid()")
+click(b[0] + 16, b[1] + 1, wait=1); time.sleep(4)  # the old server is quitting
+until(lambda: lua("return vim.fn.getpid()") not in (old, None, "") and lua("return vim.fn.getpid()") != old, 20)
+check("reload: new Neovim", lua("return vim.fn.getpid()") != old, True)
+check("reload: window stays open", proc.poll() is None, True)
+until(lambda: name() == "sample.txt", 10)
+check("reload: file open again", name(), "sample.txt")
+check("reload: state is fresh", lua("return vim.g.lazycode_before_reload"), None)
 msgs = str(lua("return vim.api.nvim_exec2('messages',{output=true}).output"))
 bad = [l for l in msgs.splitlines() if "E5" in l or "Error" in l or "stack traceback" in l]
 if bad: print("MESSAGES:\n" + msgs[-1800:])

@@ -15,14 +15,15 @@ The repository root is the Neovim config. The LazyCode code lives in `lua/lazyco
 ## Tests
 
 The tests drive a real editor on a private virtual display, so no window appears on your
-desktop. They need `python3`, `tmux` and `xvfb`.
+desktop. They need `python3`, `tmux`, `xvfb` and `xdotool`, plus the window from
+`cargo build --release` in `app/` (or set `LAZYCODE_APP` to its path).
 
 ```sh
 tests/headless.sh                 # all suites
-tests/headless.sh explorer kitty  # only these suites
+tests/headless.sh explorer app    # only these suites
 ```
 
-The suites are `editing`, `terminal`, `welcome`, `explorer`, `kitty` and `complete`.
+The suites are `editing`, `terminal`, `welcome`, `explorer`, `app` and `complete`.
 
 ## Updating dependencies
 

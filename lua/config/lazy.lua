@@ -18,6 +18,8 @@ require("lazy").setup({
   spec = {
     -- add LazyVim and import its plugins
     { "LazyVim/LazyVim", import = "lazyvim.plugins" },
+    -- Rust support comes on by itself wherever a Rust toolchain is installed.
+    { import = "lazyvim.plugins.extras.lang.rust", cond = vim.fn.executable("cargo") == 1 },
     -- import/override with your plugins
     { import = "plugins" },
   },

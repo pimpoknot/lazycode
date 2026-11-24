@@ -37,16 +37,8 @@ launch() {
   if [ ! -f "$CONFIG/.lazycode" ] && [ -x "$APP/install.sh" ]; then
     LAZYCODE_SOURCE=$APP "$APP/install.sh" || exit 1
   fi
-  if [ "$#" -eq 1 ] && [ -d "$1" ]; then
-    cd -- "$1" || exit 1
-    set --
-    LAZYCODE_START=folder
-  else
-    LAZYCODE_START=welcome
-  fi
-  export LAZYCODE_START
   use_runtime
-  if ! command -v kitty >/dev/null 2>&1 || ! command -v nvim >/dev/null 2>&1; then
+  if ! command -v lazycode-app >/dev/null 2>&1 || ! command -v nvim >/dev/null 2>&1; then
     echo "LazyCode is not fully installed. Run: lazycode doctor" >&2
     exit 1
   fi
@@ -59,17 +51,19 @@ launch() {
   fi
 }
 
-# Runs the window. Some Wayland drivers cannot start kitty: retry through XWayland.
+# Runs the window, which decides between a project and the Welcome tab.
+# Some Wayland drivers cannot start it: retry through XWayland.
 window() {
+  app=lazycode-app
+  bundle="$HOME/Applications/LazyCode.app/Contents/MacOS/LazyCode"
+  # macOS gives the window its Dock name and icon only when it runs from the bundle.
+  [ -x "$bundle" ] && app=$bundle
   started=$(date +%s)
-  set -- --title LazyCode nvim "$@"
-  # kitty rejects --class on macOS.
-  [ "$(uname -s)" = Linux ] && set -- --class lazycode "$@"
-  kitty --config "$CONFIG/assets/kitty.conf" "$@"
+  "$app" "$@"
   code=$?
-  if [ "$code" -ne 0 ] && [ "$(uname -s)" = Linux ] && [ -n "${DISPLAY:-}" ] &&
+  if [ "$code" -ne 0 ] && [ -n "${WAYLAND_DISPLAY:-}" ] && [ -n "${DISPLAY:-}" ] &&
     [ $(($(date +%s) - started)) -le 3 ]; then
-    kitty --config "$CONFIG/assets/kitty.conf" -o linux_display_server=x11 "$@"
+    env -u WAYLAND_DISPLAY "$app" "$@"
   fi
 }
 
@@ -77,13 +71,13 @@ doctor() {
   use_runtime
   status=0
   echo "LazyCode $(version) on $(uname -s) $(uname -m)"
-  for tool in nvim kitty lazygit rg fd node git; do
+  for tool in lazycode-app nvim lazygit rg fd node git; do
     found=$(command -v "$tool" 2>/dev/null || true)
     if [ -z "$found" ] && [ "$tool" = fd ]; then
       found=$(command -v fdfind 2>/dev/null || true) # Debian and Ubuntu name
     fi
     if [ -n "$found" ]; then
-      printf '  ok      %-8s %s\n' "$tool" "$found"
+      printf '  ok      %-12s %s\n' "$tool" "$found"
     else
       printf '  MISSING %s\n' "$tool"
       status=1
@@ -93,6 +87,13 @@ doctor() {
     echo "  ok      C compiler"
   else
     echo "  WARNING no C compiler: syntax parsers cannot be built"
+  fi
+  if [ "$(uname -s)" = Linux ]; then
+    if command -v wl-copy >/dev/null 2>&1 || command -v xclip >/dev/null 2>&1 || command -v xsel >/dev/null 2>&1; then
+      echo "  ok      clipboard tool"
+    else
+      echo "  WARNING no clipboard tool: install wl-clipboard, xclip or xsel to copy and paste with other apps"
+    fi
   fi
   if [ -f "$CONFIG/.lazycode" ]; then
     echo "  ok      config   $CONFIG"

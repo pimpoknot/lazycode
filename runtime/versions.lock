@@ -3,10 +3,10 @@ fd 10.5.2 linux arm64 63ea52cb31586e6d98efa2f06d73d542f16c7d0c4af0f07b579aaf9714
 fd 10.5.2 linux x86_64 7e2d07fa2b8807642aaec67b7e2972a9fbe4db26fcb340a7372392db42b26694 https://github.com/sharkdp/fd/releases/download/v10.5.2/fd-v10.5.2-x86_64-unknown-linux-musl.tar.gz
 fd 10.5.2 macos arm64 81bf98a16d3d7230e4a9123fcede243d71ea31a577113476ed43f1cdf4773162 https://github.com/sharkdp/fd/releases/download/v10.5.2/fd-v10.5.2-aarch64-apple-darwin.tar.gz
 fd 10.5.2 macos x86_64 0f02e6000a8c896cd254cf4dccc7da1e604e77a32c6783609eed5e4cb07785e3 https://github.com/sharkdp/fd/releases/download/v10.5.2/fd-v10.5.2-x86_64-apple-darwin.tar.gz
-kitty 0.51.1 linux arm64 9c3e8e38a5068c511e3a94e065cbd2c5af4922d76d2d205d5084018e8572648d https://github.com/kovidgoyal/kitty/releases/download/v0.51.1/kitty-0.51.1-arm64.txz
-kitty 0.51.1 linux x86_64 d309be978f017dbdcccae175d281092fefe7c8bc64478fa620581604ab0b53c0 https://github.com/kovidgoyal/kitty/releases/download/v0.51.1/kitty-0.51.1-x86_64.txz
-kitty 0.51.1 macos arm64 7a1c492103d7e5ff825351bdda1833bdf6f95d33da9e1ae22e52f61cc5ec013e https://github.com/kovidgoyal/kitty/releases/download/v0.51.1/kitty-0.51.1.dmg
-kitty 0.51.1 macos x86_64 7a1c492103d7e5ff825351bdda1833bdf6f95d33da9e1ae22e52f61cc5ec013e https://github.com/kovidgoyal/kitty/releases/download/v0.51.1/kitty-0.51.1.dmg
+fonts 3.5.1 linux arm64 01172f37db8543edb102e5cb5c64101c9f4686630804d49b419aa07b23a69996 https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.1/NerdFontsSymbolsOnly.tar.xz
+fonts 3.5.1 linux x86_64 01172f37db8543edb102e5cb5c64101c9f4686630804d49b419aa07b23a69996 https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.1/NerdFontsSymbolsOnly.tar.xz
+fonts 3.5.1 macos arm64 01172f37db8543edb102e5cb5c64101c9f4686630804d49b419aa07b23a69996 https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.1/NerdFontsSymbolsOnly.tar.xz
+fonts 3.5.1 macos x86_64 01172f37db8543edb102e5cb5c64101c9f4686630804d49b419aa07b23a69996 https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.1/NerdFontsSymbolsOnly.tar.xz
 lazygit 0.66.3 linux arm64 ac0b48237f3d0283813e7154ec063237e519532feb0470c0881a1793ee78fd42 https://github.com/jesseduffield/lazygit/releases/download/v0.66.3/lazygit_0.66.3_linux_arm64.tar.gz
 lazygit 0.66.3 linux x86_64 0a23f429a95f0d09db298b3c291536d818de066aa5a85c255806f0490ff6656b https://github.com/jesseduffield/lazygit/releases/download/v0.66.3/lazygit_0.66.3_linux_x86_64.tar.gz
 lazygit 0.66.3 macos arm64 6873e6b7a538b521c4d7ff3f76ec49e6dcafa41e6053a6aae33c12f62663e163 https://github.com/jesseduffield/lazygit/releases/download/v0.66.3/lazygit_0.66.3_darwin_arm64.tar.gz

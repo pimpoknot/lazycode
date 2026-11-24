@@ -25,13 +25,21 @@ return {
   {
     "saghen/blink.cmp",
     opts = {
-      -- No suggestions in name prompts: Enter confirms and Esc cancels right away.
+      -- No suggestions in name prompts or the Search panel: Enter confirms and Esc cancels right away.
       enabled = function()
-        return vim.bo.buftype ~= "prompt" and vim.b.completion ~= false and vim.bo.filetype ~= "snacks_input"
+        local ft = vim.bo.filetype
+        return vim.bo.buftype ~= "prompt" and vim.b.completion ~= false and ft ~= "snacks_input" and ft ~= "grug-far"
       end,
       keymap = {
         preset = "enter",
-        ["<Tab>"] = { "select_and_accept", "snippet_forward", "fallback" },
+        -- Like VS Code: Tab also accepts the Copilot suggestion shown in gray.
+        ["<Tab>"] = {
+          "select_and_accept",
+          function()
+            return LazyVim.cmp.map({ "snippet_forward", "ai_nes", "ai_accept" })()
+          end,
+          "fallback",
+        },
         ["<C-p>"] = false,
         ["<C-n>"] = false,
         ["<C-k>"] = false,
@@ -42,6 +50,9 @@ return {
       },
     },
   },
+  -- noice fails on the restart event of Reload Window, and an IDE needs no command line popup.
+  -- Notifications still come from Snacks.
+  { "folke/noice.nvim", enabled = false },
   {
     "folke/snacks.nvim",
     opts = {
