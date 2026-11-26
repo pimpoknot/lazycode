@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0-rc.1
 
 - LazyCode now runs in its own native window instead of kitty. kitty is no longer downloaded,
   and `~/.config/lazycode.local/kitty.conf` is no longer read.
