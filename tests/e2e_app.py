@@ -462,6 +462,24 @@ time.sleep(0.6)
 check("scroll: the wheel scrolls the file", lua("return vim.fn.line('w0')") > 1, True)
 check("scroll: the window animates it", app.header()[3] > before, True)
 
+# VS Code shortcuts win over plugins: a plugin that maps Ctrl+B loses it when plugins load.
+lua("vim.keymap.set('n', '<C-b>', '<Nop>') vim.api.nvim_exec_autocmds('User', { pattern = 'LazyLoad' }) return 1")
+time.sleep(0.5)
+check("shortcuts: LazyCode keeps Ctrl+B after a plugin loads", lua("return vim.fn.maparg('<C-b>', 'n', false, true).desc"), "Toggle Sidebar")
+copilot = """local x = vim.tbl_filter(function(e) return e.module == 'lazyvim.plugins.extras.ai.copilot' end,
+  require('lazyvim.util.extras').get())[1]
+require('lazycode.extensions').toggle(x)
+return vim.list_contains(LazyVim.config.json.data.extras, x.module)"""
+check("Extensions: an extra that breaks LazyCode stays off", lua(copilot), False)
+reset()
+key("ctrl+l", wait=0.4)
+check("keyboard: Ctrl+L selects the line", lua("return vim.fn.mode()"), "S")
+key("escape", wait=0.3)
+wrap = lua("return vim.wo.wrap")
+key("alt+z", wait=0.4)
+check("keyboard: Alt+Z toggles word wrap", lua("return vim.wo.wrap"), not wrap)
+key("alt+z", wait=0.4)
+
 # Focus: the window reports it, so FocusGained reloads files changed in other apps.
 lua(
     "_G.lc_focus = {} vim.api.nvim_create_autocmd({'FocusGained','FocusLost'}, {callback=function(e) table.insert(_G.lc_focus, e.event) end}) return 1"

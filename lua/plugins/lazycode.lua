@@ -16,6 +16,8 @@ return {
     "neovim/nvim-lspconfig",
     opts = {
       servers = {
+        -- Ctrl+K starts VS Code chords (Ctrl+K Ctrl+O...); signature help is Ctrl+Shift+Space.
+        ["*"] = { keys = { { "<c-k>", false, mode = "i" } } },
         bashls = {},
         cssls = {},
         html = {},

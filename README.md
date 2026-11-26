@@ -72,14 +72,16 @@ On macOS, use `Cmd` in place of `Ctrl`, except for `` Ctrl+` ``, `Ctrl+Tab` and 
 
 | Area | Shortcuts |
 | --- | --- |
-| Files | `Ctrl+N` new, `Ctrl+O` open, `Ctrl+K Ctrl+O` open folder, `Ctrl+S` save, `Ctrl+W` close |
-| Editing | `Ctrl+Z`, `Ctrl+Y`, `Ctrl+C`, `Ctrl+X`, `Ctrl+V`, `Ctrl+A`, `Ctrl+/` |
+| Files | `Ctrl+N` new, `Ctrl+O` open, `Ctrl+K Ctrl+O` open folder, `Ctrl+S` save, `Ctrl+Shift+S` save as, `Ctrl+K S` save all, `Ctrl+W` close, `Ctrl+K Ctrl+W` close all |
+| Editing | `Ctrl+Z`, `Ctrl+Y`, `Ctrl+C`, `Ctrl+X`, `Ctrl+V`, `Ctrl+A`, `Ctrl+/`, `Ctrl+L` select line, `Alt+Z` word wrap, `Ctrl+K Ctrl+X` trim spaces |
 | Lines | `Alt+Up/Down` move, `Shift+Alt+Up/Down` duplicate, `Ctrl+Shift+K` delete |
 | Cursors | `Ctrl+D`, `Ctrl+Shift+L`, `Ctrl+Alt+Up/Down`, `Alt+Click` |
-| Navigate | `Ctrl+P`, `Ctrl+Shift+P`, `Ctrl+G`, `F12`, `Shift+F12`, `Alt+Left/Right` |
-| Search | `Ctrl+F`, `Ctrl+H`, `Ctrl+Shift+F`, `Ctrl+Shift+H` |
-| Code | `Ctrl+Space`, `Ctrl+.`, `F2`, `Shift+Alt+F`, `F8` |
+| Navigate | `Ctrl+P`, `Ctrl+Shift+P` or `F1`, `Ctrl+G`, `Ctrl+T`, `F12`, `Ctrl+F12`, `Shift+F12`, `Ctrl+K F12`, `Alt+Left/Right`, `Ctrl+Shift+\`, `Ctrl+PageUp/PageDown` |
+| Search | `Ctrl+F`, `Ctrl+H`, `F3`, `Shift+F3`, `Ctrl+Shift+F`, `Ctrl+Shift+H` |
+| Code | `Ctrl+Space`, `Ctrl+Shift+Space`, `Ctrl+K Ctrl+I`, `Ctrl+.`, `F2`, `Shift+Alt+F`, `Ctrl+K Ctrl+F`, `F8` |
 | Panels | `Ctrl+B`, `Ctrl+Shift+E`, `Ctrl+Shift+G`, `Ctrl+Shift+X`, `` Ctrl+` ``, `Ctrl+Shift+M` |
+| Folding | `Ctrl+Shift+[` fold, `Ctrl+Shift+]` unfold, `Ctrl+K Ctrl+0` fold all, `Ctrl+K Ctrl+J` unfold all |
+| View | `Ctrl+=`, `Ctrl+-`, `Ctrl+0` zoom, `Ctrl+K Z` zen mode, `Ctrl+K Ctrl+T` theme, `Ctrl+K M` language |
 | Terminal | `Ctrl+Shift+C` copy, `Ctrl+Shift+V` paste |
 | Help | `Ctrl+K Ctrl+S` lists every shortcut |
 
@@ -98,6 +100,9 @@ On macOS, use `Cmd` in place of `Ctrl`, except for `` Ctrl+` ``, `Ctrl+Tab` and 
   one with `:set guifont=Hack:h14:w500` (name as `fc-list : family` shows it, size, weight).
 
 ## Known limitations
+
+- Extras that replace a LazyCode part (a second Copilot, nvim-cmp, neo-tree, dashboards, two
+  snippet engines) cannot be turned on in Extensions.
 
 - VS Code extensions do not run. Languages and tools come from the Neovim ecosystem.
 - No debugger panel, Remote/SSH, or tab dragging yet.

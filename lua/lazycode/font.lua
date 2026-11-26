@@ -2,7 +2,7 @@
 -- zoom, Ctrl+0 resets, and the size is remembered.
 -- `family` lists names as `fc-list : family` shows them, in order; `weight` is 400 regular, 600 semibold.
 -- FiraCode SemiBold, or JetBrains Mono SemiBold where FiraCode is not installed.
-local M = { family = "FiraCode Nerd Font Mono,JetBrainsMono Nerd Font Mono", weight = 600, default = 13 }
+local M = { family = "FiraCode Nerd Font Mono", weight = 550, default = 13 }
 
 local function guifont(size)
   return ("%s:h%s:w%d"):format(M.family, size, M.weight)

@@ -409,6 +409,47 @@ local function bindings()
       end,
     },
     { { I, "n" }, "<A-LeftMouse>", "<Cmd>MultipleCursorsMouseAddDelete<CR>" },
+
+    -- More of VS Code's default keyboard shortcuts.
+    { I, "<C-l>", "<C-o>V<C-g>" },
+    { "n", "<C-l>", "V<C-g>" },
+    { ALL, "<C-Bar>", "<Cmd>normal! %<CR>" },
+    { ALL, "<A-z>", "<Cmd>set wrap!<CR>" },
+    { ALL, "<C-k><C-x>", "<Cmd>keeppatterns %s/\\s\\+$//e<CR>" },
+    -- shortcut: both toggle the comment, while VS Code only adds or only removes; split them if asked.
+    { ALL, "<C-k><C-c>", "<Cmd>normal gcc<CR>" },
+    { ALL, "<C-k><C-u>", "<Cmd>normal gcc<CR>" },
+    { ALL, "<C-{>", "<Cmd>normal! zc<CR>" },
+    { ALL, "<C-}>", "<Cmd>normal! zo<CR>" },
+    { ALL, "<C-k><C-0>", "<Cmd>normal! zM<CR>" },
+    { ALL, "<C-k><C-j>", "<Cmd>normal! zR<CR>" },
+    { ALL, "<F3>", "<Cmd>normal! n<CR>" },
+    { ALL, "<S-F3>", "<Cmd>normal! N<CR>" },
+    { { I, "n", S }, "<C-S-Space>", vim.lsp.buf.signature_help },
+    { ALL, "<C-k><C-i>", vim.lsp.buf.hover },
+    {
+      ALL,
+      "<C-F12>",
+      function()
+        Snacks.picker.lsp_implementations()
+      end,
+    },
+    {
+      ALL,
+      "<C-k><F12>",
+      function()
+        vim.cmd.vsplit()
+        vim.lsp.buf.definition()
+      end,
+    },
+    {
+      ALL,
+      "<C-k><C-f>",
+      function()
+        LazyVim.format({ force = true })
+      end,
+    },
+    { { X, S }, "<C-k><C-f>", vim.lsp.buf.format },
   }
 end
 

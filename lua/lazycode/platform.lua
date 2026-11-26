@@ -21,10 +21,29 @@ function M.variants(lhs)
   return { lhs, (lhs:gsub("<C%-", "<D-")) }
 end
 
+local global = {} ---@type table[] every global LazyCode shortcut, to set again later
+
 function M.map(modes, lhs, rhs, opts)
+  global[#global + 1] = { modes, lhs, rhs, opts }
   for _, key in ipairs(M.variants(lhs)) do
     vim.keymap.set(modes, key, rhs, opts)
   end
+end
+
+--- VS Code shortcuts always win: plugins that load later (extras included) may map the same
+--- keys, so LazyCode sets its own again after each plugin loads.
+function M.keep_shortcuts()
+  vim.api.nvim_create_autocmd("User", {
+    group = vim.api.nvim_create_augroup("lazycode_shortcuts", {}),
+    pattern = "LazyLoad",
+    callback = vim.schedule_wrap(function()
+      for _, m in ipairs(global) do
+        for _, key in ipairs(M.variants(m[2])) do
+          vim.keymap.set(m[1], key, m[3], m[4])
+        end
+      end
+    end),
+  })
 end
 
 --- Expands a picker key table with the macOS variants.

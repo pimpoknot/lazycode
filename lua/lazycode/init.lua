@@ -56,6 +56,39 @@ function M.setup()
   map(everywhere, "<C-k><C-s>", function()
     Snacks.picker.keymaps()
   end, "Keyboard Shortcuts")
+  map(editor, "<C-S-s>", function()
+    vim.ui.input({ prompt = "Save As", default = vim.fn.expand("%:p"), completion = "file" }, function(path)
+      if path and path ~= "" then
+        vim.cmd.saveas(vim.fn.fnameescape(path))
+      end
+    end)
+  end, "Save As")
+  map(editor, "<C-k>s", "<Cmd>wall<CR>", "Save All")
+  map(editor, "<C-k><C-w>", function()
+    Snacks.bufdelete.all()
+  end, "Close All Tabs")
+  map(everywhere, "<F1>", function()
+    Snacks.picker.commands()
+  end, "Command Palette")
+  map(editor, "<C-t>", function()
+    Snacks.picker.lsp_workspace_symbols()
+  end, "Go to Symbol in Workspace")
+  map(editor, "<C-PageDown>", "<Cmd>BufferLineCycleNext<CR>", "Next Tab")
+  map(editor, "<C-PageUp>", "<Cmd>BufferLineCyclePrev<CR>", "Previous Tab")
+  map(editor, "<C-k>z", function()
+    Snacks.zen()
+  end, "Zen Mode")
+  map(editor, "<C-k><C-t>", function()
+    Snacks.picker.colorschemes()
+  end, "Color Theme")
+  map(editor, "<C-k>m", function()
+    vim.ui.select(vim.fn.getcompletion("", "filetype"), { prompt = "Language Mode" }, function(ft)
+      if ft then
+        vim.bo.filetype = ft
+      end
+    end)
+  end, "Change Language Mode")
+  require("lazycode.platform").keep_shortcuts()
 end
 
 return M

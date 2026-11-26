@@ -25,6 +25,12 @@
 - Tabs start above the editor, after the open side panel.
 - Search ignores case for lowercase queries, like VS Code, and `Ctrl+Alt+Enter` replaces all.
 - Scrolling is smooth with the Explorer open too, and the cursor blinks faster.
+- More VS Code shortcuts: save as, save all, close all, select line, word wrap, folding, F3,
+  signature help, implementation, workspace symbols, zen mode, theme and language mode.
+- VS Code shortcuts always win: LazyCode sets them again after any plugin or extra loads, and the
+  language server no longer takes `Ctrl+K` while typing, so `Ctrl+K` chords work.
+- Extensions refuses extras that break LazyCode: a second Copilot, nvim-cmp, neo-tree, dashboards,
+  and two snippet engines at once.
 - Files changed in other apps reload when you come back to the window.
 - `lazycode doctor` warns on Linux when no clipboard tool is installed.
 - Copilot (native), ESLint and Prettier come enabled, with format on save for JavaScript and
