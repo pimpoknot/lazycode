@@ -29,7 +29,15 @@ M.actions = {
     keys("<C-a>")
   end,
   definition = function()
-    vim.lsp.buf.definition()
+    vim.lsp.buf.definition({ reuse_win = true })
+  end,
+  hover = function()
+    local diags = vim.diagnostic.get(0, { lnum = vim.api.nvim_win_get_cursor(0)[1] - 1 })
+    if #diags > 0 then
+      vim.diagnostic.open_float({ scope = "line", focus = false })
+    else
+      vim.lsp.buf.hover()
+    end
   end,
   references = function()
     Snacks.picker.lsp_references()
@@ -46,6 +54,9 @@ M.actions = {
   comment = function()
     keys("<C-/>")
   end,
+  claude = function()
+    require("lazycode").send_to_claude()
+  end,
 }
 
 local items = {
@@ -55,10 +66,12 @@ local items = {
   { "Select\\ All", "all", "Ctrl+A" },
   { "-sep1-" },
   { "Go\\ to\\ Definition", "definition", "F12" },
+  { "Show\\ Problem\\ /\\ Hover", "hover", "Ctrl+K Ctrl+I" },
   { "References", "references", "Shift+F12" },
   { "Rename", "rename", "F2" },
   { "Code\\ Actions", "action", "Ctrl+." },
   { "-sep2-" },
+  { "Ask\\ Claude\\ Code", "claude", "Ctrl+Alt+S" },
   { "Format", "format", "Shift+Alt+F" },
   { "Comment", "comment", "Ctrl+/" },
 }
@@ -119,6 +132,8 @@ function M.shape_at(row, col)
   local ft, bt = vim.bo[buf].filetype, vim.bo[buf].buftype
   if ft == "lazycode_bar" then
     return require("lazycode.sidebar").item_at(line) and "pointer" or "default"
+  elseif ft == "lazycode_diag_hover" then
+    return line == vim.api.nvim_buf_line_count(buf) and "pointer" or "default"
   elseif ft == "lazycode_welcome" or ft == "lazycode_side" then
     return require("lazycode.welcome").clickable(buf, line) and "pointer" or "default"
   elseif LISTS[ft] then
@@ -140,9 +155,144 @@ local function notify(method, ...)
   end
 end
 
+local diag_win, diag_buf, diag_target
+local diag_timer = vim.uv.new_timer()
+local diag_ns = vim.api.nvim_create_namespace("lazycode_diag_hover")
+
+local function close_diag_hover()
+  if diag_win and vim.api.nvim_win_is_valid(diag_win) then
+    pcall(vim.api.nvim_win_close, diag_win, true)
+  end
+  diag_win, diag_target = nil, nil
+end
+
+local SEV_HL = {
+  [vim.diagnostic.severity.ERROR] = { " ", "DiagnosticError" },
+  [vim.diagnostic.severity.WARN] = { " ", "DiagnosticWarn" },
+  [vim.diagnostic.severity.INFO] = { " ", "DiagnosticInfo" },
+  [vim.diagnostic.severity.HINT] = { " ", "DiagnosticHint" },
+}
+
+local function show_diag_at(row, col)
+  if vim.fn.pumvisible() == 1 then
+    return
+  end
+  local win = win_at(row, col)
+  if not win or (diag_win and win == diag_win) then
+    return
+  end
+  local cfg = vim.api.nvim_win_get_config(win)
+  local buf = vim.api.nvim_win_get_buf(win)
+  if cfg.relative ~= "" or vim.bo[buf].buftype ~= "" then
+    return close_diag_hover()
+  end
+  local info = vim.fn.getwininfo(win)[1]
+  if not info then
+    return
+  end
+  local lnum = vim.fn.line("w0", win) + row - (info.winrow - 1 + info.winbar) - 1
+  local bcol = col - (info.wincol - 1 + info.textoff)
+  if lnum < 0 or bcol < 0 then
+    return close_diag_hover()
+  end
+  local hits = {}
+  for _, d in ipairs(vim.diagnostic.get(buf, { lnum = lnum })) do
+    local ec = (d.end_col and d.end_col > d.col) and d.end_col or (d.col + 4)
+    if bcol >= math.max(0, d.col - 1) and bcol <= ec + 1 then
+      hits[#hits + 1] = d
+    end
+  end
+  if #hits == 0 then
+    return close_diag_hover()
+  end
+  local key = ("%d:%d:%d"):format(buf, lnum, hits[1].col)
+  if diag_target == key and diag_win and vim.api.nvim_win_is_valid(diag_win) then
+    return
+  end
+  close_diag_hover()
+  diag_target = key
+  local lines, marks = {}, {}
+  local max_w = 28
+  for _, d in ipairs(hits) do
+    local sev = SEV_HL[d.severity] or SEV_HL[vim.diagnostic.severity.INFO]
+    local first = true
+    for msg_line in (d.message or ""):gmatch("[^\n]+") do
+      local prefix = first and sev[1] or "  "
+      local text = prefix .. msg_line .. (first and d.source and (" [" .. d.source .. "]") or "")
+      lines[#lines + 1] = text
+      marks[#marks + 1] = { #lines - 1, 0, #prefix, sev[2] }
+      max_w = math.max(max_w, math.min(76, vim.fn.strdisplaywidth(text) + 2))
+      first = false
+    end
+  end
+  local action_line = "󰌶 Quick Fix...  (Ctrl+.)"
+  lines[#lines + 1] = action_line
+  marks[#marks + 1] = { #lines - 1, 0, #action_line, "Function" }
+  if not (diag_buf and vim.api.nvim_buf_is_valid(diag_buf)) then
+    diag_buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[diag_buf].buftype = "nofile"
+    vim.bo[diag_buf].filetype = "lazycode_diag_hover"
+    vim.bo[diag_buf].bufhidden = "hide"
+  end
+  vim.bo[diag_buf].modifiable = true
+  vim.api.nvim_buf_set_lines(diag_buf, 0, -1, false, lines)
+  vim.bo[diag_buf].modifiable = false
+  vim.api.nvim_buf_clear_namespace(diag_buf, diag_ns, 0, -1)
+  for _, m in ipairs(marks) do
+    vim.api.nvim_buf_set_extmark(diag_buf, diag_ns, m[1], m[2], { end_col = m[3], hl_group = m[4] })
+  end
+  local height = math.min(10, #lines)
+  local open_row = (row + height + 3 < vim.o.lines) and (row + 1) or math.max(1, row - height - 2)
+  local open_col = math.max(4, math.min(col, vim.o.columns - max_w - 4))
+  diag_win = vim.api.nvim_open_win(diag_buf, false, {
+    relative = "editor",
+    row = open_row,
+    col = open_col,
+    width = max_w,
+    height = height,
+    style = "minimal",
+    border = "rounded",
+    focusable = true,
+    noautocmd = true,
+    zindex = 60,
+  })
+  vim.wo[diag_win].wrap = true
+  local target_win, target_lnum, target_col = win, lnum + 1, hits[1].col
+  vim.keymap.set({ "n", "i" }, "<LeftRelease>", function()
+    close_diag_hover()
+    if vim.api.nvim_win_is_valid(target_win) then
+      vim.api.nvim_set_current_win(target_win)
+      pcall(vim.api.nvim_win_set_cursor, target_win, { target_lnum, target_col })
+      vim.schedule(function()
+        vim.lsp.buf.code_action()
+      end)
+    end
+  end, { buffer = diag_buf, silent = true, nowait = true })
+end
+
 --- Called by the window on every cell the mouse enters. It arrives as a notification, so an
 --- open :popup menu delays it instead of blocking the window, and mouse moves never become keys.
 function M.hover(row, col)
+  local over_popup = diag_win and vim.api.nvim_win_is_valid(diag_win) and win_at(row, col) == diag_win
+  if not over_popup then
+    if diag_win and vim.api.nvim_win_is_valid(diag_win) then
+      local cfg = vim.api.nvim_win_get_config(diag_win)
+      local near = math.abs(row - cfg.row) <= cfg.height + 2 and col >= cfg.col - 2 and col <= cfg.col + cfg.width + 2
+      if not near then
+        close_diag_hover()
+      end
+    end
+    if diag_timer then
+      diag_timer:stop()
+      diag_timer:start(
+        350,
+        0,
+        vim.schedule_wrap(function()
+          show_diag_at(row, col)
+        end)
+      )
+    end
+  end
   local shape = M.shape_at(row, col)
   if shape == M.shape then
     return

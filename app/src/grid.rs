@@ -65,8 +65,9 @@ pub struct Grid {
     pub restart: Option<String>,
     /// Scrolls since the renderer last took them.
     pub scrolls: Vec<Scroll>,
-    /// The `guifont` option, and whether it changed since the window last read it.
+    /// The `guifont` and 'linespace' options, until the window reads them.
     pub guifont: Option<String>,
+    pub linespace: Option<i64>,
     /// Scrolls since start, for the tests' screen dump.
     pub scrolled: u64,
     /// Windows that scrolled, as `(top, bottom, left, right, rows)`, waiting for the next flush.
@@ -104,6 +105,7 @@ impl Grid {
             scrolls: Vec::new(),
             scrolled: 0,
             guifont: None,
+            linespace: None,
             hints: Vec::new(),
             shown: Vec::new(),
         }
@@ -310,6 +312,9 @@ impl Grid {
             "mode_change" => self.mode = size(a.get(1)),
             "option_set" if a.first().and_then(Value::as_str) == Some("guifont") => {
                 self.guifont = a.get(1).and_then(Value::as_str).map(str::to_string);
+            }
+            "option_set" if a.first().and_then(Value::as_str) == Some("linespace") => {
+                self.linespace = a.get(1).and_then(Value::as_i64);
             }
             "lazycode_scroll" if a.len() >= 5 => {
                 let n = |i: usize| size(a.get(i));

@@ -180,6 +180,8 @@ local function ensure_bar()
   M.render()
 end
 
+M.ensure_bar = ensure_bar
+
 local function fix_layout()
   if not (bar_win and vim.api.nvim_win_is_valid(bar_win)) then
     return
@@ -212,13 +214,21 @@ local function show(id, opts)
   elseif id == "search" then
     -- A fixed panel like VS Code's Search view, instead of a floating picker.
     local far = require("grug-far")
+    local prefills = opts and opts.search and { search = opts.search } or nil
     if far.has_instance(SEARCH) then
       far.open_instance(SEARCH)
+      if prefills then
+        local inst = far.get_instance(SEARCH)
+        if inst then
+          inst:update_input_values(prefills, true)
+        end
+      end
     else
       far.open({
         instanceName = SEARCH,
         staticTitle = "Search",
         windowCreationCommand = "topleft vertical " .. M.width .. "split",
+        prefills = prefills,
       })
     end
     vim.wo.winfixwidth = true
@@ -290,6 +300,18 @@ function M.reset()
   M.active = nil
 end
 
+function M.open_search(search)
+  ensure_bar()
+  for _, item in ipairs(items) do
+    if item.id ~= "search" and item.panel ~= false and visible(item.id) then
+      hide(item.id)
+    end
+  end
+  show("search", { search = search })
+  M.active, M.last = "search", "search"
+  vim.schedule(fix_layout)
+end
+
 function M.toggle_sidebar()
   if M.active and visible(M.active) then
     M.toggle(M.active)
@@ -323,7 +345,12 @@ function M.setup()
     M.toggle("explorer")
   end, "Explorer")
   map("<C-S-f>", function()
-    M.toggle("search")
+    local search = require("lazycode.editing").consume_selection()
+    if search then
+      M.open_search(search)
+    else
+      M.toggle("search")
+    end
   end, "Search in Files")
   map("<C-S-g>", function()
     M.toggle("git")
@@ -343,17 +370,46 @@ function M.setup()
       vim.schedule(fix_layout)
     end,
   })
-  -- Like VS Code, one click on a search result opens it. Other lines keep the normal click.
+  -- Like VS Code, one click on a search result opens it, and Esc returns to the editor.
   vim.api.nvim_create_autocmd("FileType", {
     group = group,
     pattern = "grug-far",
     callback = function(ev)
+      local bopts = { buffer = ev.buf, silent = true, nowait = true }
       vim.keymap.set({ "n", "i" }, "<LeftRelease>", function()
+        local win = vim.api.nvim_get_current_win()
         local far = require("grug-far").get_instance(ev.buf)
         if far then
           far:goto_location()
         end
-      end, { buffer = ev.buf, silent = true })
+        if vim.api.nvim_get_current_win() == win and not require("lazycode.editing").vim_mode then
+          vim.schedule(function()
+            if vim.api.nvim_buf_is_valid(ev.buf) and vim.api.nvim_get_current_buf() == ev.buf then
+              vim.cmd.startinsert()
+            end
+          end)
+        end
+      end, bopts)
+      vim.keymap.set({ "n", "i" }, "<Esc>", function()
+        if vim.fn.mode() == "i" then
+          vim.cmd.stopinsert()
+        end
+        if vim.b[ev.buf].lazycode_transient then
+          local far = require("grug-far").get_instance(ev.buf)
+          if far then
+            far:close()
+          end
+        end
+        require("lazycode.welcome").focus_main()
+      end, bopts)
+      for _, key in ipairs(require("lazycode.platform").variants("<C-v>")) do
+        vim.keymap.set({ "n", "i" }, key, function()
+          local text = (vim.fn.getreg("+") or ""):gsub("[\r\n]+", " ")
+          if text ~= "" then
+            vim.api.nvim_put({ text }, "c", false, true)
+          end
+        end, bopts)
+      end
     end,
   })
   -- When the last editor window closes, quit instead of leaving the bar alone.
@@ -379,12 +435,25 @@ function M.setup()
     end,
   })
 
-  if #vim.api.nvim_list_uis() > 0 then
+  local function init_ui()
+    if require("lazycode.project").reloading() then
+      ensure_bar()
+      return
+    end
     if vim.fn.argc() == 0 then
       require("lazycode.welcome").show()
     end
     -- Like VS Code, initial focus is on the editor, not the Explorer.
     M.toggle("explorer", { enter = false })
+  end
+  if #vim.api.nvim_list_uis() > 0 then
+    init_ui()
+  else
+    vim.api.nvim_create_autocmd("UIEnter", {
+      group = group,
+      once = true,
+      callback = vim.schedule_wrap(init_ui),
+    })
   end
   M.refresh_git()
 end

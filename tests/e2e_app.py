@@ -1,4 +1,9 @@
-import json, os, subprocess, sys, tempfile, time
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import appctl
@@ -52,6 +57,7 @@ def lua(code):
     try:
         r = subprocess.run(
             ["nvim", "--clean", "--headless", "--server", nsock, "--remote-expr", expr],
+            check=False,
             capture_output=True,
             text=True,
             timeout=8,
@@ -463,9 +469,15 @@ check("scroll: the wheel scrolls the file", lua("return vim.fn.line('w0')") > 1,
 check("scroll: the window animates it", app.header()[3] > before, True)
 
 # VS Code shortcuts win over plugins: a plugin that maps Ctrl+B loses it when plugins load.
-lua("vim.keymap.set('n', '<C-b>', '<Nop>') vim.api.nvim_exec_autocmds('User', { pattern = 'LazyLoad' }) return 1")
+lua(
+    "vim.keymap.set('n', '<C-b>', '<Nop>') vim.api.nvim_exec_autocmds('User', { pattern = 'LazyLoad' }) return 1"
+)
 time.sleep(0.5)
-check("shortcuts: LazyCode keeps Ctrl+B after a plugin loads", lua("return vim.fn.maparg('<C-b>', 'n', false, true).desc"), "Toggle Sidebar")
+check(
+    "shortcuts: LazyCode keeps Ctrl+B after a plugin loads",
+    lua("return vim.fn.maparg('<C-b>', 'n', false, true).desc"),
+    "Toggle Sidebar",
+)
 copilot = """local x = vim.tbl_filter(function(e) return e.module == 'lazyvim.plugins.extras.ai.copilot' end,
   require('lazyvim.util.extras').get())[1]
 require('lazycode.extensions').toggle(x)
@@ -479,6 +491,47 @@ wrap = lua("return vim.wo.wrap")
 key("alt+z", wait=0.4)
 check("keyboard: Alt+Z toggles word wrap", lua("return vim.wo.wrap"), not wrap)
 key("alt+z", wait=0.4)
+
+# Ctrl+F finds text in the file with VS Code controls; LazyVim <leader> shortcuts are gone.
+reset()
+key("ctrl+f", wait=1)
+check(
+    "keyboard: Ctrl+F searches the file",
+    lua("return #Snacks.picker.get({source='lines'})"),
+    1,
+)
+text_in("third", wait=0.6)
+key("escape", wait=0.5)
+check(
+    "Ctrl+F: single Esc closes search without getting stuck",
+    (lua("return #Snacks.picker.get({source='lines'})"), mode()),
+    (0, "i"),
+)
+key("ctrl+f", wait=1)
+text_in("third", wait=0.8)
+key("enter", wait=0.8)
+check(
+    "Ctrl+F: Enter jumps to the match",
+    lua("return vim.api.nvim_win_get_cursor(0)[1]"),
+    3,
+)
+check("Ctrl+F: leaves editor ready to type", mode(), "i")
+reset()
+key("shift+right", "shift+right", "shift+right", "shift+right", wait=0.3)
+key("ctrl+f", wait=1)
+check(
+    "Ctrl+F: pre-fills selected text",
+    lua(
+        "return Snacks.picker.get({source='lines'})[1] and Snacks.picker.get({source='lines'})[1].input:get()"
+    ),
+    "alph",
+)
+key("escape", wait=0.5)
+check(
+    "shortcuts: LazyVim <Space>ff is removed",
+    lua("return vim.fn.maparg(' ff', 'n')"),
+    "",
+)
 
 # Focus: the window reports it, so FocusGained reloads files changed in other apps.
 lua(
@@ -552,7 +605,9 @@ def until(fn, limit=8):
 
 screen_text = lambda: app.kc(["get-text"])
 gitout = lambda *a: (
-    subprocess.run(["git"] + list(a), cwd=repo, capture_output=True, text=True).stdout
+    subprocess.run(
+        ["git"] + list(a), check=False, cwd=repo, capture_output=True, text=True
+    ).stdout
 )
 if not until(lambda: "Files" in screen_text() and "Stash" in screen_text()):
     print("LAZYGIT DID NOT DRAW")
@@ -577,13 +632,17 @@ time.sleep(0.5)
 _kc(["send-key", "enter"])
 until(lambda: gitout("log", "--format=%s").strip() == "commit e2e")
 log = subprocess.run(
-    ["git", "log", "--format=%s"], cwd=repo, capture_output=True, text=True
+    ["git", "log", "--format=%s"], check=False, cwd=repo, capture_output=True, text=True
 ).stdout.strip()
 check("lazygit: stage e commit", log, "commit e2e")
 check(
     "lazygit: clean tree",
     subprocess.run(
-        ["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True
+        ["git", "status", "--porcelain"],
+        check=False,
+        cwd=repo,
+        capture_output=True,
+        text=True,
     ).stdout.strip(),
     "",
 )

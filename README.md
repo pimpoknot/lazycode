@@ -96,8 +96,8 @@ On macOS, use `Cmd` in place of `Ctrl`, except for `` Ctrl+` ``, `Ctrl+Tab` and 
   without closing LazyCode.
 - More languages and plugins: `:LazyExtras`
 - Font size: `Ctrl+=`, `Ctrl+-` and `Ctrl+0`, like VS Code. The size is remembered.
-- Font: FiraCode Nerd Font Mono SemiBold, or JetBrains Mono where FiraCode is missing. Try another
-  one with `:set guifont=Hack:h14:w500` (name as `fc-list : family` shows it, size, weight).
+- Font: FiraCode Nerd Font Mono, or JetBrains Mono where FiraCode is missing. Family, fallback, size,
+  weight, bold weight, line height and letter spacing are all set in `lua/lazycode/font.lua`.
 
 ## Known limitations
 

@@ -312,6 +312,10 @@ local function reload_path()
   return vim.fn.stdpath("state") .. "/lazycode_reload.json"
 end
 
+function M.reloading()
+  return uv.fs_stat(reload_path()) ~= nil
+end
+
 --- Reload Window, like VS Code: restarts Neovim in the same window, folder and open files.
 function M.reload()
   if #unsaved() > 0 then
@@ -323,28 +327,57 @@ function M.reload()
       return notify("Some files could not be saved, so the window was not reloaded", vim.log.levels.ERROR)
     end
   end
+  local sidebar = require("lazycode.sidebar")
+  local panel = sidebar.active
+  if panel == "git" then
+    panel = "explorer"
+  end
   -- Focus the editor: it holds the active file, and the QuitPre in sidebar.lua closes the
   -- panels, where quitting from a closed window would abort.
+  local editor_win
   for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
     local buf = vim.api.nvim_win_get_buf(win)
     if vim.api.nvim_win_get_config(win).relative == "" and vim.bo[buf].buftype == "" then
+      editor_win = win
       vim.api.nvim_set_current_win(win)
       break
     end
   end
-  local files, current = {}, vim.api.nvim_buf_get_name(0)
-  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-    local name = vim.api.nvim_buf_get_name(buf)
-    if vim.bo[buf].buflisted and vim.bo[buf].buftype == "" and name ~= "" and name ~= current then
+  local files, seen = {}, {}
+  local current = editor_win and vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(editor_win)) or ""
+  local cursor = editor_win and vim.api.nvim_win_get_cursor(editor_win) or nil
+  local function add_file(name)
+    if name ~= "" and not seen[name] and uv.fs_stat(name) then
+      seen[name] = true
       files[#files + 1] = name
     end
   end
-  if vim.bo.buftype == "" and current ~= "" then
-    files[#files + 1] = current -- opened last, so it is the active tab again
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    local buf = vim.api.nvim_win_get_buf(win)
+    if vim.api.nvim_win_get_config(win).relative == "" and vim.bo[buf].buftype == "" then
+      local name = vim.api.nvim_buf_get_name(buf)
+      if name ~= current then
+        add_file(name)
+      end
+    end
   end
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    local name = vim.api.nvim_buf_get_name(buf)
+    if vim.bo[buf].buflisted and vim.bo[buf].buftype == "" and name ~= current then
+      add_file(name)
+    end
+  end
+  add_file(current) -- opened last, so it is the active tab again
+  local state = {
+    folder = M.folder,
+    files = files,
+    current = current ~= "" and current or nil,
+    cursor = cursor,
+    panel = panel or false,
+  }
   local fd = io.open(reload_path(), "w")
   if fd then
-    fd:write(vim.json.encode(files))
+    fd:write(vim.json.encode(state))
     fd:close()
   end
   -- The new Neovim inherits this environment and working directory.
@@ -353,20 +386,82 @@ function M.reload()
   vim.cmd("restart +qall! lua require('lazycode.project').reopen()")
 end
 
---- Runs in the restarted Neovim: opens the files that were open before Reload Window.
-function M.reopen()
+--- Runs in the restarted Neovim: restores the folder, side panel, and open files.
+function M.reopen(tries)
+  tries = tries or 0
+  if (not vim.g.did_very_lazy or #vim.api.nvim_list_uis() == 0) and tries < 100 then
+    return vim.defer_fn(function()
+      M.reopen(tries + 1)
+    end, 30)
+  end
   local fd = io.open(reload_path(), "r")
   if not fd then
     return
   end
-  local ok, files = pcall(vim.json.decode, fd:read("*a"))
+  local ok, state = pcall(vim.json.decode, fd:read("*a"))
   fd:close()
   os.remove(reload_path())
-  for _, file in ipairs(ok and files or {}) do
-    if uv.fs_stat(file) then
+  if not ok or type(state) ~= "table" then
+    return
+  end
+  -- Support both the structured state table and legacy file arrays.
+  local files = state.files or state
+  local folder = state.folder
+  local panel = state.panel
+  if folder and vim.fn.isdirectory(folder) == 1 then
+    M.folder = folder
+    vim.cmd.cd(vim.fn.fnameescape(folder))
+  end
+  local welcome = require("lazycode.welcome")
+  local sidebar = require("lazycode.sidebar")
+  sidebar.ensure_bar()
+  welcome.focus_main()
+  local opened = false
+  for _, file in ipairs(files) do
+    if type(file) == "string" and uv.fs_stat(file) then
       vim.cmd.edit(vim.fn.fnameescape(file))
+      vim.bo.buflisted = true
+      opened = true
     end
   end
+  if opened then
+    if state.current and uv.fs_stat(state.current) then
+      vim.cmd.edit(vim.fn.fnameescape(state.current))
+      vim.bo.buflisted = true
+    end
+    if type(state.cursor) == "table" and #state.cursor == 2 then
+      local line = math.max(1, math.min(state.cursor[1], vim.api.nvim_buf_line_count(0)))
+      pcall(vim.api.nvim_win_set_cursor, 0, { line, state.cursor[2] })
+    end
+    -- Clean up any empty "[No Name]" buffer created during startup.
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      if
+        buf ~= vim.api.nvim_get_current_buf()
+        and vim.bo[buf].buflisted
+        and vim.bo[buf].buftype == ""
+        and not vim.bo[buf].modified
+        and vim.api.nvim_buf_get_name(buf) == ""
+        and vim.api.nvim_buf_line_count(buf) == 1
+        and vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] == ""
+      then
+        pcall(vim.api.nvim_buf_delete, buf, { force = true })
+      end
+    end
+  else
+    welcome.show()
+  end
+  local want_panel = panel
+  if want_panel == nil and M.folder then
+    want_panel = "explorer"
+  end
+  if type(want_panel) == "string" and want_panel ~= "" then
+    sidebar.toggle(want_panel, { enter = false })
+  end
+  welcome.focus_main()
+  require("lazycode.editing").ensure_insert()
+  sidebar.refresh_git()
+  vim.cmd.redrawtabline()
+  vim.cmd("redraw!")
 end
 
 return M

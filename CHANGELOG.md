@@ -17,7 +17,8 @@
 - The cursor blinks with a fade, and scrolling is animated.
 - Activity bar icons are spaced out and answer clicks on the rows around them.
 - The noice command line popup is gone: messages go to `:messages` and notifications.
-- Text uses FiraCode Nerd Font Mono SemiBold at 13 pt, with JetBrains Mono as fallback. Both are
+- Text uses FiraCode Nerd Font Mono at 13 pt, with JetBrains Mono as fallback. Every font detail
+  (weight, bold weight, line height, letter spacing) is set in `lua/lazycode/font.lua`. Both are
   pinned by the installer, so every machine shows the same font. `Ctrl+=`, `Ctrl+-` and `Ctrl+0`
   change the size, and `guifont` picks another font.
 - Text is drawn as bold and bright as kitty drew it.

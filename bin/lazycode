@@ -23,8 +23,12 @@ version() {
 }
 
 use_runtime() {
+  case ":$PATH:" in
+    *":$HOME/.local/bin:"*) ;;
+    *) PATH="$HOME/.local/bin:$PATH" ;;
+  esac
   LAZYCODE_USER_PATH=$PATH
-  export LAZYCODE_USER_PATH NVIM_APPNAME=lazycode
+  export PATH LAZYCODE_USER_PATH NVIM_APPNAME=lazycode
   if [ -x "$RUNTIME/bin/nvim" ]; then
     PATH="$RUNTIME/bin:$PATH"
     LAZYCODE_RUNTIME=$RUNTIME

@@ -312,8 +312,12 @@ impl ApplicationHandler<UserEvent> for App {
                     let (on_notify, on_exit) = handlers(&self.proxy);
                     match Nvim::connect(&addr, on_notify, on_exit) {
                         Ok(nvim) => {
+                            ui.grid = grid::Grid::new();
+                            ui.renderer.reset();
+                            ui.moving = false;
                             ui.nvim = nvim;
                             ui.nvim.attach(ui.size.0, ui.size.1);
+                            ui.nvim.notify("nvim_ui_set_focus", vec![true.into()]);
                             return;
                         }
                         Err(error) => self.error = Some(format!("Could not reload: {error}")),
@@ -340,9 +344,17 @@ impl ApplicationHandler<UserEvent> for App {
                     if (ui.grid.cursor, ui.grid.cursor_shape()) != before {
                         ui.cursor_since = Instant::now();
                     }
-                    if let Some(font) = ui.grid.guifont.take()
-                        && ui.renderer.set_font(&font)
-                    {
+                    let font = ui
+                        .grid
+                        .guifont
+                        .take()
+                        .is_some_and(|f| ui.renderer.set_font(&f));
+                    let line = ui
+                        .grid
+                        .linespace
+                        .take()
+                        .is_some_and(|l| ui.renderer.set_line_space(l as f32));
+                    if font || line {
                         ui.fit();
                     }
                     ui.window.request_redraw();

@@ -315,6 +315,7 @@ function M.show()
   -- Remove the empty "[No Name]" tab Neovim starts with.
   if
     previous ~= buf
+    and vim.api.nvim_buf_is_valid(previous)
     and vim.api.nvim_buf_get_name(previous) == ""
     and vim.bo[previous].buftype == ""
     and not vim.bo[previous].modified

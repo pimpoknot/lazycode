@@ -7,7 +7,6 @@ use std::sync::Arc;
 use winit::window::Window;
 
 const ATLAS: u32 = 2048;
-const FONT_POINTS: f32 = 13.0; // Until Neovim's `guifont` says otherwise.
 const PADDING: f32 = 6.0;
 
 #[repr(C)]
@@ -64,30 +63,63 @@ fn rgba(c: u32) -> [f32; 4] {
     ]
 }
 
-/// Until `guifont` arrives: the same fonts `lazycode/font.lua` asks for.
-const DEFAULT_FAMILY: &str = "FiraCode Nerd Font Mono,JetBrainsMono Nerd Font Mono";
-const DEFAULT_WEIGHT: u16 = 600;
+/// Every font detail the window draws with: `guifont` plus Neovim's 'linespace'.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Font {
+    pub families: Vec<String>,
+    pub points: f32,
+    pub weight: u16,
+    pub bold: u16,
+    /// Extra pixels between letters (`guifont` `:c`) and between lines ('linespace').
+    pub letter: f32,
+    pub line: f32,
+}
 
-/// The families in order, size and weight of a `guifont` like `Fira Code,Hack:h14:w600`.
-/// Underscores stand for spaces, as other Neovim GUIs accept.
-pub fn parse_guifont(value: &str) -> (Vec<String>, Option<f32>, Option<u16>) {
+impl Default for Font {
+    /// Until `guifont` arrives: the same font `lazycode/font.lua` asks for.
+    fn default() -> Self {
+        Font {
+            families: vec![
+                "FiraCode Nerd Font Mono".into(),
+                "JetBrainsMono Nerd Font Mono".into(),
+            ],
+            points: 13.0,
+            weight: 550,
+            bold: 700,
+            letter: 0.0,
+            line: 0.0,
+        }
+    }
+}
+
+/// A `guifont` like `Fira Code,Hack:h14:w600:W800:c1`: families in order, size, weight, bold
+/// weight and letter spacing. Missing parts keep their defaults, and underscores stand for spaces
+/// as other Neovim GUIs accept.
+pub fn parse_guifont(value: &str) -> Font {
+    let mut font = Font::default();
     let mut parts = value.split(':');
-    let families = parts
+    let families: Vec<String> = parts
         .next()
         .unwrap_or_default()
         .split(',')
         .map(|f| f.trim().replace('_', " "))
         .filter(|f| !f.is_empty())
         .collect();
+    if !families.is_empty() {
+        font.families = families;
+    }
     let options: Vec<&str> = parts.collect();
-    let option = |prefix: char| options.iter().filter_map(move |p| p.strip_prefix(prefix));
-    let points = option('h')
-        .filter_map(|p| p.parse::<f32>().ok())
-        .find(|p| (4.0..=96.0).contains(p));
-    let weight = option('w')
-        .filter_map(|p| p.parse::<u16>().ok())
-        .find(|w| (100..=900).contains(w));
-    (families, points, weight)
+    let number = |prefix: char, range: std::ops::RangeInclusive<f32>| {
+        options
+            .iter()
+            .filter_map(|p| p.strip_prefix(prefix)?.parse::<f32>().ok())
+            .find(|v| range.contains(v))
+    };
+    font.points = number('h', 4.0..=96.0).unwrap_or(font.points);
+    font.weight = number('w', 100.0..=900.0).map_or(font.weight, |w| w as u16);
+    font.bold = number('W', 100.0..=900.0).map_or(font.bold, |w| w as u16);
+    font.letter = number('c', -5.0..=20.0).unwrap_or(font.letter);
+    font
 }
 
 /// Nerd Font icons live in the Private Use Areas.
@@ -101,22 +133,23 @@ fn fit(w: f32, h: f32, box_w: f32, box_h: f32) -> f32 {
 }
 
 /// Font size, baseline, padding and cell size in physical pixels for a display scale.
+/// Letter and line spacing widen the cell, and the text sits in its middle.
 fn metrics(
     font: &fontdue::Font,
-    points: f32,
+    spec: &Font,
     scale: f32,
 ) -> Result<(f32, f32, f32, (f32, f32)), String> {
-    let px = (points * 96.0 / 72.0 * scale).round();
-    let line = font
+    let px = (spec.points * 96.0 / 72.0 * scale).round();
+    let (letter, line) = ((spec.letter * scale).round(), (spec.line * scale).round());
+    let metrics = font
         .horizontal_line_metrics(px)
         .ok_or("The font has no line metrics.")?;
     let cell = (
-        font.metrics('M', px).advance_width.round().max(1.0),
-        (line.ascent - line.descent + line.line_gap)
-            .round()
-            .max(1.0),
+        (font.metrics('M', px).advance_width.round() + letter).max(1.0),
+        ((metrics.ascent - metrics.descent + metrics.line_gap).round() + line).max(1.0),
     );
-    Ok((px, line.ascent.round(), (PADDING * scale).round(), cell))
+    let baseline = metrics.ascent.round() + (line / 2.0).round();
+    Ok((px, baseline, (PADDING * scale).round(), cell))
 }
 
 /// Regular, bold, italic and bold italic, indexed by `bold | italic << 1`, then the
@@ -124,6 +157,7 @@ fn metrics(
 fn load_fonts(
     names: &[String],
     weight: u16,
+    bold: u16,
 ) -> Result<([fontdue::Font; 4], Option<fontdue::Font>), String> {
     use fontdb::{Family, Query, Style, Weight};
     let mut db = fontdb::Database::new();
@@ -161,9 +195,9 @@ fn load_fonts(
     };
     let fonts = [
         load(Weight(weight), Style::Normal)?,
-        load(Weight((weight + 300).clamp(700, 900)), Style::Normal)?,
+        load(Weight(bold), Style::Normal)?,
         load(Weight(weight), Style::Italic)?,
-        load(Weight((weight + 300).clamp(700, 900)), Style::Italic)?,
+        load(Weight(bold), Style::Italic)?,
     ];
     // The pinned copy wins: distributions package older symbol fonts under the same name.
     let pinned = crate::nvim::runtime()
@@ -194,8 +228,7 @@ pub struct Renderer {
     atlas: Atlas,
     fonts: [fontdue::Font; 4],
     symbols: Option<fontdue::Font>,
-    /// Families, weight and size in points, from `guifont`.
-    font: (Vec<String>, u16, f32),
+    font: Font,
     scale: f32,
     px: f32,
     baseline: f32,
@@ -363,8 +396,12 @@ impl Renderer {
 
         let capacity = 16_384;
         let buffer = Self::instance_buffer(&device, capacity);
-        let (fonts, symbols) = load_fonts(&parse_guifont(DEFAULT_FAMILY).0, DEFAULT_WEIGHT)?;
-        let (px, baseline, pad, cell) = metrics(&fonts[0], FONT_POINTS, scale)?;
+        let (fonts, symbols) = load_fonts(
+            &Font::default().families,
+            Font::default().weight,
+            Font::default().bold,
+        )?;
+        let (px, baseline, pad, cell) = metrics(&fonts[0], &Font::default(), scale)?;
         let renderer = Self {
             surface,
             device,
@@ -379,7 +416,7 @@ impl Renderer {
             atlas: Atlas::default(),
             fonts,
             symbols,
-            font: (parse_guifont(DEFAULT_FAMILY).0, DEFAULT_WEIGHT, FONT_POINTS),
+            font: Font::default(),
             scale,
             px,
             baseline,
@@ -430,23 +467,34 @@ impl Renderer {
         self.remeasure();
     }
 
+    pub fn reset(&mut self) {
+        self.anims.clear();
+    }
+
     /// Applies `guifont`. Returns true when the cell size may have changed.
     pub fn set_font(&mut self, guifont: &str) -> bool {
-        let (families, points, weight) = parse_guifont(guifont);
-        let font = (
-            if families.is_empty() {
-                parse_guifont(DEFAULT_FAMILY).0
-            } else {
-                families
-            },
-            weight.unwrap_or(400),
-            points.unwrap_or(FONT_POINTS),
-        );
+        self.apply(Font {
+            line: self.font.line,
+            ..parse_guifont(guifont)
+        })
+    }
+
+    /// Applies 'linespace', the extra pixels between lines.
+    pub fn set_line_space(&mut self, pixels: f32) -> bool {
+        self.apply(Font {
+            line: pixels,
+            ..self.font.clone()
+        })
+    }
+
+    fn apply(&mut self, font: Font) -> bool {
         if font == self.font {
             return false;
         }
-        if (&font.0, font.1) != (&self.font.0, self.font.1) {
-            match load_fonts(&font.0, font.1) {
+        if (&font.families, font.weight, font.bold)
+            != (&self.font.families, self.font.weight, self.font.bold)
+        {
+            match load_fonts(&font.families, font.weight, font.bold) {
                 Ok((fonts, _)) => self.fonts = fonts,
                 Err(_) => return false,
             }
@@ -457,7 +505,7 @@ impl Renderer {
     }
 
     fn remeasure(&mut self) {
-        if let Ok((px, baseline, pad, cell)) = metrics(&self.fonts[0], self.font.2, self.scale) {
+        if let Ok((px, baseline, pad, cell)) = metrics(&self.fonts[0], &self.font, self.scale) {
             (self.px, self.baseline, self.pad, self.cell) = (px, baseline, pad, cell);
             self.atlas = Atlas::default();
         }
@@ -547,7 +595,9 @@ impl Renderer {
                         ((chh - h) / 2.0).round() - self.baseline,
                     ]
                 } else {
-                    [m.xmin as f32, -(m.height as f32 + m.ymin as f32)]
+                    // Letter spacing splits evenly around each letter.
+                    let inset = (self.font.letter * self.scale / 2.0).round();
+                    [m.xmin as f32 + inset, -(m.height as f32 + m.ymin as f32)]
                 },
             })
         };
@@ -789,18 +839,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn guifont_gives_families_in_order_size_and_weight() {
-        let font = |f: &[&str], h, w| (f.iter().map(|s| s.to_string()).collect::<Vec<_>>(), h, w);
+    fn guifont_gives_every_font_detail() {
+        let f = parse_guifont("Fira_Code, Hack:w600:W800:h12.5:c1.5");
+        assert_eq!(f.families, ["Fira Code", "Hack"]);
         assert_eq!(
-            parse_guifont("JetBrains Mono:h14"),
-            font(&["JetBrains Mono"], Some(14.0), None)
+            (f.points, f.weight, f.bold, f.letter),
+            (12.5, 600, 800, 1.5)
         );
+        // Missing or out of range parts keep the defaults.
+        assert_eq!(parse_guifont(""), Font::default());
+        let f = parse_guifont("Hack:h0:w5");
         assert_eq!(
-            parse_guifont("Fira_Code, Hack:w600:h12.5"),
-            font(&["Fira Code", "Hack"], Some(12.5), Some(600))
+            (f.points, f.weight),
+            (Font::default().points, Font::default().weight)
         );
-        assert_eq!(parse_guifont(""), font(&[], None, None));
-        assert_eq!(parse_guifont("Hack:h0:w5"), font(&["Hack"], None, None));
     }
 
     #[test]

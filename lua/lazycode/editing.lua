@@ -117,6 +117,30 @@ function M.start_insert()
   end
 end
 
+--- Single-line text currently selected in Select or Visual mode, if any, leaving selection cleanly.
+function M.consume_selection()
+  local mode = vim.fn.mode()
+  if not mode:match("^[vVsS\22\19]") then
+    return nil
+  end
+  local kind = (mode == "s" and "v") or (mode == "S" and "V") or (mode == "\19" and "\22") or mode
+  local ok, lines = pcall(vim.fn.getregion, vim.fn.getpos("v"), vim.fn.getpos("."), { type = kind })
+  vim.cmd("normal! \27")
+  if ok and #lines == 1 and lines[1] ~= "" then
+    return lines[1]
+  end
+  return nil
+end
+
+local function with_normal(fn)
+  return function()
+    if vim.fn.mode():match("^[vVsS\22\19]") then
+      vim.cmd("normal! \27")
+    end
+    fn()
+  end
+end
+
 local function set_cursor(line, col)
   line = math.max(1, math.min(line, vim.api.nvim_buf_line_count(0)))
   vim.api.nvim_win_set_cursor(0, { line, col })
@@ -221,8 +245,31 @@ local function escape()
   vim.cmd.nohlsearch()
 end
 
+--- Ctrl+F: finds text in the current file with VS Code controls (Enter jumps, Esc cancels, click opens).
+local function find_in_file()
+  local ok, blink = pcall(require, "blink.cmp")
+  if ok and blink.is_visible() then
+    blink.hide()
+  end
+  local pattern = M.consume_selection()
+  Snacks.picker.lines({ pattern = pattern })
+end
+
 local function find_replace_file()
-  require("grug-far").open({ prefills = { paths = vim.fn.expand("%:p") } })
+  local ok, blink = pcall(require, "blink.cmp")
+  if ok and blink.is_visible() then
+    blink.hide()
+  end
+  local search = M.consume_selection()
+  local path = vim.fn.expand("%:p")
+  local _, _, buf = require("grug-far").open({
+    transient = true,
+    windowCreationCommand = "botright 14split",
+    prefills = { search = search, paths = path ~= "" and path or nil },
+  })
+  if buf and vim.api.nvim_buf_is_valid(buf) then
+    vim.b[buf].lazycode_transient = true
+  end
 end
 
 local function goto_line()
@@ -235,9 +282,9 @@ local function goto_line()
 end
 
 local function jump(key)
-  return function()
-    vim.cmd.normal({ args = { vim.keycode(key) }, bang = true })
-  end
+  return with_normal(function()
+    pcall(vim.cmd.normal, { args = { vim.keycode(key) }, bang = true })
+  end)
 end
 
 local function mc_visual(command)
@@ -246,35 +293,41 @@ end
 
 local I, S, X = "i", "s", "x"
 local ALL = { I, "n" }
+local ANY = { I, "n", X, S }
 
 -- { modes, key, action, options }
 local function bindings()
   local selected_up = ":m '<-2<CR>gv<C-g>"
   local selected_down = ":m '>+1<CR>gv<C-g>"
   return {
-    { { I, "n", X, S }, "<C-s>", save },
-    { ALL, "<C-z>", "<Cmd>undo<CR>" },
-    { ALL, "<C-y>", "<Cmd>redo<CR>" },
-    { ALL, "<C-S-z>", "<Cmd>redo<CR>" },
-    { { X, S }, "<C-z>", "<Esc><Cmd>undo<CR>" },
+    { ANY, "<C-s>", save, { desc = "Save" } },
+    { ALL, "<C-z>", "<Cmd>undo<CR>", { desc = "Undo" } },
+    { ALL, "<C-y>", "<Cmd>redo<CR>", { desc = "Redo" } },
+    { ALL, "<C-S-z>", "<Cmd>redo<CR>", { desc = "Redo" } },
+    { { X, S }, "<C-z>", "<Esc><Cmd>undo<CR>", { desc = "Undo" } },
+    { { X, S }, "<C-y>", "<Esc><Cmd>redo<CR>", { desc = "Redo" } },
+    { { X, S }, "<C-S-z>", "<Esc><Cmd>redo<CR>", { desc = "Redo" } },
 
-    { ALL, "<C-c>", copy_line },
-    { S, "<C-c>", '<C-g>"+ygv<C-g>' },
-    { X, "<C-c>", '"+ygv' },
-    { ALL, "<C-x>", cut_line },
-    { S, "<C-x>", '<C-g>"+c' },
-    { X, "<C-x>", '"+c' },
-    { ALL, "<C-v>", paste },
-    { S, "<C-v>", '<C-g>"_c<C-r><C-o>+' },
-    { X, "<C-v>", '"_c<C-r><C-o>+' },
-    { I, "<C-a>", "<C-o>gg<C-o>0<C-o>vG$<C-g>" },
-    { "n", "<C-a>", "gg0vG$<C-g>" },
-    { X, "<C-a>", "<Esc>gg0vG$<C-g>" },
-    { S, "<C-a>", "<C-g><Esc>gg0vG$<C-g>" },
+    { ALL, "<C-c>", copy_line, { desc = "Copy" } },
+    { S, "<C-c>", '<C-g>"+ygv<C-g>', { desc = "Copy" } },
+    { X, "<C-c>", '"+ygv', { desc = "Copy" } },
+    { ALL, "<C-x>", cut_line, { desc = "Cut" } },
+    { S, "<C-x>", '<C-g>"+c', { desc = "Cut" } },
+    { X, "<C-x>", '"+c', { desc = "Cut" } },
+    { ALL, "<C-v>", paste, { desc = "Paste" } },
+    { S, "<C-v>", '<C-g>"_c<C-r><C-o>+', { desc = "Paste" } },
+    { X, "<C-v>", '"_c<C-r><C-o>+', { desc = "Paste" } },
+    { I, "<C-a>", "<C-o>gg<C-o>0<C-o>vG$<C-g>", { desc = "Select All" } },
+    { "n", "<C-a>", "gg0vG$<C-g>", { desc = "Select All" } },
+    { X, "<C-a>", "<Esc>gg0vG$<C-g>", { desc = "Select All" } },
+    { S, "<C-a>", "<C-g><Esc>gg0vG$<C-g>", { desc = "Select All" } },
 
-    { ALL, "<C-/>", "<Cmd>normal gcc<CR>" },
-    { { X, S }, "<C-/>", "<C-g>gcgv<C-g>", { remap = true } },
-    { ALL, "<S-A-a>", "<Cmd>normal gcc<CR>" },
+    { ALL, "<C-/>", "<Cmd>normal gcc<CR>", { desc = "Toggle Line Comment" } },
+    { { X, S }, "<C-/>", "<C-g>gcgv<C-g>", { remap = true, desc = "Toggle Line Comment" } },
+    { ALL, "<C-_>", "<Cmd>normal gcc<CR>", { desc = "Toggle Line Comment" } },
+    { { X, S }, "<C-_>", "<C-g>gcgv<C-g>", { remap = true, desc = "Toggle Line Comment" } },
+    { ALL, "<S-A-a>", "<Cmd>normal gcc<CR>", { desc = "Toggle Block Comment" } },
+    { { X, S }, "<S-A-a>", "<C-g>gcgv<C-g>", { remap = true, desc = "Toggle Block Comment" } },
 
     {
       ALL,
@@ -282,6 +335,7 @@ local function bindings()
       function()
         move_line(-1)
       end,
+      { desc = "Move Line Up" },
     },
     {
       ALL,
@@ -289,117 +343,139 @@ local function bindings()
       function()
         move_line(1)
       end,
+      { desc = "Move Line Down" },
     },
-    { S, "<A-Up>", "<C-g>" .. selected_up },
-    { S, "<A-Down>", "<C-g>" .. selected_down },
-    { X, "<A-Up>", selected_up },
-    { X, "<A-Down>", selected_down },
+    { S, "<A-Up>", "<C-g>" .. selected_up, { desc = "Move Line Up" } },
+    { S, "<A-Down>", "<C-g>" .. selected_down, { desc = "Move Line Down" } },
+    { X, "<A-Up>", selected_up, { desc = "Move Line Up" } },
+    { X, "<A-Down>", selected_down, { desc = "Move Line Down" } },
     {
-      ALL,
+      ANY,
       "<S-A-Up>",
-      function()
+      with_normal(function()
         duplicate_line(-1)
-      end,
+      end),
+      { desc = "Copy Line Up" },
     },
     {
-      ALL,
+      ANY,
       "<S-A-Down>",
-      function()
+      with_normal(function()
         duplicate_line(1)
-      end,
+      end),
+      { desc = "Copy Line Down" },
     },
-    { ALL, "<C-S-k>", delete_line },
+    { ANY, "<C-S-k>", with_normal(delete_line), { desc = "Delete Line" } },
     {
-      ALL,
+      ANY,
       "<C-CR>",
-      function()
+      with_normal(function()
         open_line(1)
-      end,
+      end),
+      { desc = "Insert Line Below" },
     },
     {
-      ALL,
+      ANY,
       "<C-S-CR>",
-      function()
+      with_normal(function()
         open_line(-1)
-      end,
+      end),
+      { desc = "Insert Line Above" },
     },
 
-    { I, "<C-]>", "<C-t>" },
-    { I, "<C-[>", "<C-d>" },
-    { I, "<S-Tab>", "<C-d>" },
-    { S, "<Tab>", "<C-g>>gv<C-g>" },
-    { S, "<S-Tab>", "<C-g><gv<C-g>" },
-    { S, "<C-]>", "<C-g>>gv<C-g>" },
-    { S, "<C-[>", "<C-g><gv<C-g>" },
-    { I, "<Home>", smart_home },
-    { I, "<C-BS>", "<C-w>" },
-    { I, "<C-Del>", "<C-o>dw" },
+    { I, "<C-]>", "<C-t>", { desc = "Indent Line" } },
+    { "n", "<C-]>", ">>", { desc = "Indent Line" } },
+    { I, "<C-[>", "<C-d>", { desc = "Outdent Line" } },
+    { "n", "<C-[>", "<<", { desc = "Outdent Line" } },
+    { I, "<S-Tab>", "<C-d>", { desc = "Outdent Line" } },
+    { S, "<Tab>", "<C-g>>gv<C-g>", { desc = "Indent Selection" } },
+    { S, "<S-Tab>", "<C-g><gv<C-g>", { desc = "Outdent Selection" } },
+    { X, "<Tab>", ">gv", { desc = "Indent Selection" } },
+    { X, "<S-Tab>", "<gv", { desc = "Outdent Selection" } },
+    { S, "<C-]>", "<C-g>>gv<C-g>", { desc = "Indent Selection" } },
+    { S, "<C-[>", "<C-g><gv<C-g>", { desc = "Outdent Selection" } },
+    { ALL, "<Home>", smart_home, { desc = "Go to Beginning of Line" } },
+    { I, "<C-BS>", "<C-w>", { desc = "Delete Word Left" } },
+    { I, "<C-Del>", "<C-o>dw", { desc = "Delete Word Right" } },
+    { ALL, "<C-Up>", "<Cmd>normal! \25<CR>", { desc = "Scroll Line Up" } },
+    { ALL, "<C-Down>", "<Cmd>normal! \5<CR>", { desc = "Scroll Line Down" } },
 
-    { I, "<C-d>", "<C-o>viw<C-g>" },
-    { S, "<C-d>", "<C-g>" .. mc_visual("AddJumpNextMatch") },
-    { X, "<C-d>", mc_visual("AddJumpNextMatch") },
-    { I, "<C-S-l>", "<C-o>viw" .. mc_visual("AddMatches") },
-    { S, "<C-S-l>", "<C-g>" .. mc_visual("AddMatches") },
-    { X, "<C-S-l>", mc_visual("AddMatches") },
-    { { I, "n" }, "<C-A-Up>", "<Cmd>MultipleCursorsAddUp<CR>" },
-    { { I, "n" }, "<C-A-Down>", "<Cmd>MultipleCursorsAddDown<CR>" },
+    { I, "<C-d>", "<C-o>viw<C-g>", { desc = "Add Selection to Next Find Match" } },
+    { "n", "<C-d>", "viw<C-g>", { desc = "Add Selection to Next Find Match" } },
+    { S, "<C-d>", "<C-g>" .. mc_visual("AddJumpNextMatch"), { desc = "Add Selection to Next Find Match" } },
+    { X, "<C-d>", mc_visual("AddJumpNextMatch"), { desc = "Add Selection to Next Find Match" } },
+    { I, "<C-S-l>", "<C-o>viw" .. mc_visual("AddMatches"), { desc = "Select All Occurrences" } },
+    { "n", "<C-S-l>", "viw" .. mc_visual("AddMatches"), { desc = "Select All Occurrences" } },
+    { S, "<C-S-l>", "<C-g>" .. mc_visual("AddMatches"), { desc = "Select All Occurrences" } },
+    { X, "<C-S-l>", mc_visual("AddMatches"), { desc = "Select All Occurrences" } },
+    { I, "<C-F2>", "<C-o>viw" .. mc_visual("AddMatches"), { desc = "Change All Occurrences" } },
+    { "n", "<C-F2>", "viw" .. mc_visual("AddMatches"), { desc = "Change All Occurrences" } },
+    { S, "<C-F2>", "<C-g>" .. mc_visual("AddMatches"), { desc = "Change All Occurrences" } },
+    { X, "<C-F2>", mc_visual("AddMatches"), { desc = "Change All Occurrences" } },
+    { { I, "n" }, "<C-A-Up>", "<Cmd>MultipleCursorsAddUp<CR>", { desc = "Add Cursor Above" } },
+    { { I, "n" }, "<C-A-Down>", "<Cmd>MultipleCursorsAddDown<CR>", { desc = "Add Cursor Below" } },
 
-    { ALL, "<Esc>", escape },
-    { S, "<Esc>", "<C-g><Esc>" },
+    { ALL, "<Esc>", escape, { desc = "Escape" } },
+    { S, "<Esc>", "<C-g><Esc>", { desc = "Clear Selection" } },
 
-    { ALL, "<C-f>", "<C-o>/" },
-    { { X, S }, "<C-f>", "<Esc>/" },
-    { ALL, "<C-h>", find_replace_file },
-    { ALL, "<F3>", jump("n") },
-    { ALL, "<S-F3>", jump("N") },
-    { ALL, "<C-g>", goto_line },
-    { ALL, "<A-Left>", jump("<C-o>") },
-    { ALL, "<A-Right>", jump("<C-i>") },
+    { ANY, "<C-f>", find_in_file, { desc = "Find" } },
+    { ANY, "<C-h>", find_replace_file, { desc = "Replace" } },
+    { ANY, "<F3>", jump("n"), { desc = "Find Next" } },
+    { ANY, "<S-F3>", jump("N"), { desc = "Find Previous" } },
+    { ANY, "<C-g>", with_normal(goto_line), { desc = "Go to Line" } },
+    { ANY, "<A-Left>", jump("<C-o>"), { desc = "Go Back" } },
+    { ANY, "<A-Right>", jump("<C-i>"), { desc = "Go Forward" } },
 
-    { ALL, "<F12>", vim.lsp.buf.definition },
+    { ANY, "<F12>", with_normal(vim.lsp.buf.definition), { desc = "Go to Definition" } },
     {
-      ALL,
+      ANY,
       "<A-F12>",
-      function()
+      with_normal(function()
         Snacks.picker.lsp_definitions()
-      end,
+      end),
+      { desc = "Peek Definition" },
     },
     {
-      ALL,
+      ANY,
       "<S-F12>",
-      function()
+      with_normal(function()
         Snacks.picker.lsp_references()
-      end,
+      end),
+      { desc = "Go to References" },
     },
-    { ALL, "<F2>", vim.lsp.buf.rename },
-    { ALL, "<C-.>", vim.lsp.buf.code_action },
+    { ANY, "<F2>", with_normal(vim.lsp.buf.rename), { desc = "Rename Symbol" } },
+    { ANY, "<C-.>", with_normal(vim.lsp.buf.code_action), { desc = "Quick Fix" } },
     {
-      ALL,
+      ANY,
       "<S-A-f>",
-      function()
+      with_normal(function()
         LazyVim.format({ force = true })
-      end,
+      end),
+      { desc = "Format Document" },
     },
     {
-      ALL,
+      ANY,
       "<F8>",
-      function()
+      with_normal(function()
         vim.diagnostic.jump({ count = 1, float = true })
-      end,
+      end),
+      { desc = "Go to Next Problem" },
     },
     {
-      ALL,
+      ANY,
       "<S-F8>",
-      function()
+      with_normal(function()
         vim.diagnostic.jump({ count = -1, float = true })
-      end,
+      end),
+      { desc = "Go to Previous Problem" },
     },
     {
-      ALL,
+      ANY,
       "<C-S-o>",
-      function()
+      with_normal(function()
         Snacks.picker.lsp_symbols()
-      end,
+      end),
+      { desc = "Go to Symbol in Editor" },
     },
     {
       ALL,
@@ -407,40 +483,47 @@ local function bindings()
       function()
         require("lazycode.mouse").goto_definition()
       end,
+      { desc = "Go to Definition" },
     },
-    { { I, "n" }, "<A-LeftMouse>", "<Cmd>MultipleCursorsMouseAddDelete<CR>" },
+    { { I, "n" }, "<A-LeftMouse>", "<Cmd>MultipleCursorsMouseAddDelete<CR>", { desc = "Add Cursor at Click" } },
 
     -- More of VS Code's default keyboard shortcuts.
-    { I, "<C-l>", "<C-o>V<C-g>" },
-    { "n", "<C-l>", "V<C-g>" },
-    { ALL, "<C-Bar>", "<Cmd>normal! %<CR>" },
-    { ALL, "<A-z>", "<Cmd>set wrap!<CR>" },
-    { ALL, "<C-k><C-x>", "<Cmd>keeppatterns %s/\\s\\+$//e<CR>" },
+    { I, "<C-l>", "<C-o>V<C-g>", { desc = "Expand Line Selection" } },
+    { "n", "<C-l>", "V<C-g>", { desc = "Expand Line Selection" } },
+    { S, "<C-l>", "<C-g>j<C-g>", { desc = "Expand Line Selection" } },
+    { X, "<C-l>", "j", { desc = "Expand Line Selection" } },
+    { ALL, "<C-Bar>", "<Cmd>normal! %<CR>", { desc = "Go to Bracket" } },
+    { ANY, "<A-z>", "<Cmd>set wrap!<CR>", { desc = "Toggle Word Wrap" } },
+    { ANY, "<C-k><C-x>", "<Cmd>keeppatterns %s/\\s\\+$//e<CR>", { desc = "Trim Trailing Whitespace" } },
     -- shortcut: both toggle the comment, while VS Code only adds or only removes; split them if asked.
-    { ALL, "<C-k><C-c>", "<Cmd>normal gcc<CR>" },
-    { ALL, "<C-k><C-u>", "<Cmd>normal gcc<CR>" },
-    { ALL, "<C-{>", "<Cmd>normal! zc<CR>" },
-    { ALL, "<C-}>", "<Cmd>normal! zo<CR>" },
-    { ALL, "<C-k><C-0>", "<Cmd>normal! zM<CR>" },
-    { ALL, "<C-k><C-j>", "<Cmd>normal! zR<CR>" },
-    { ALL, "<F3>", "<Cmd>normal! n<CR>" },
-    { ALL, "<S-F3>", "<Cmd>normal! N<CR>" },
-    { { I, "n", S }, "<C-S-Space>", vim.lsp.buf.signature_help },
-    { ALL, "<C-k><C-i>", vim.lsp.buf.hover },
+    { ALL, "<C-k><C-c>", "<Cmd>normal gcc<CR>", { desc = "Add Line Comment" } },
+    { { X, S }, "<C-k><C-c>", "<C-g>gcgv<C-g>", { remap = true, desc = "Add Line Comment" } },
+    { ALL, "<C-k><C-u>", "<Cmd>normal gcc<CR>", { desc = "Remove Line Comment" } },
+    { { X, S }, "<C-k><C-u>", "<C-g>gcgv<C-g>", { remap = true, desc = "Remove Line Comment" } },
+    { ANY, "<C-{>", "<Cmd>normal! zc<CR>", { desc = "Fold" } },
+    { ANY, "<C-}>", "<Cmd>normal! zo<CR>", { desc = "Unfold" } },
+    { ANY, "<C-k><C-[>", "<Cmd>normal! zC<CR>", { desc = "Fold Recursively" } },
+    { ANY, "<C-k><C-]>", "<Cmd>normal! zO<CR>", { desc = "Unfold Recursively" } },
+    { ANY, "<C-k><C-0>", "<Cmd>normal! zM<CR>", { desc = "Fold All" } },
+    { ANY, "<C-k><C-j>", "<Cmd>normal! zR<CR>", { desc = "Unfold All" } },
+    { { I, "n", S }, "<C-S-Space>", vim.lsp.buf.signature_help, { desc = "Trigger Parameter Hints" } },
+    { ANY, "<C-k><C-i>", with_normal(vim.lsp.buf.hover), { desc = "Show Hover" } },
     {
-      ALL,
+      ANY,
       "<C-F12>",
-      function()
+      with_normal(function()
         Snacks.picker.lsp_implementations()
-      end,
+      end),
+      { desc = "Go to Implementations" },
     },
     {
-      ALL,
+      ANY,
       "<C-k><F12>",
-      function()
+      with_normal(function()
         vim.cmd.vsplit()
         vim.lsp.buf.definition()
-      end,
+      end),
+      { desc = "Open Definition to the Side" },
     },
     {
       ALL,
@@ -448,15 +531,20 @@ local function bindings()
       function()
         LazyVim.format({ force = true })
       end,
+      { desc = "Format Document" },
     },
-    { { X, S }, "<C-k><C-f>", vim.lsp.buf.format },
+    { { X, S }, "<C-k><C-f>", "<C-g><Cmd>lua vim.lsp.buf.format()<CR>", { desc = "Format Selection" } },
   }
 end
 
 function M.attach(buf)
-  if M.vim_mode or attached[buf] or not vim.api.nvim_buf_is_valid(buf) or vim.bo[buf].buftype ~= "" then
+  if M.vim_mode or not vim.api.nvim_buf_is_valid(buf) or vim.bo[buf].buftype ~= "" then
     return
   end
+  if attached[buf] and vim.fn.maparg("<C-z>", "i", false, true).buffer == buf then
+    return
+  end
+  require("lazycode.platform").clear_leader(buf)
   local list = {}
   for _, b in ipairs(bindings()) do
     local opts = vim.tbl_extend("force", { buffer = buf, silent = true, nowait = true }, b[4] or {})
