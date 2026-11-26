@@ -130,6 +130,16 @@ function M.shape_at(row, col)
   return "default"
 end
 
+--- Sends a notification to the LazyCode window, when one is attached.
+local function notify(method, ...)
+  for _, ui in ipairs(vim.api.nvim_list_uis()) do
+    local info = ui.chan and vim.api.nvim_get_chan_info(ui.chan)
+    if info and info.client and info.client.name == "lazycode-app" then
+      vim.rpcnotify(ui.chan, method, ...)
+    end
+  end
+end
+
 --- Called by the window on every cell the mouse enters. It arrives as a notification, so an
 --- open :popup menu delays it instead of blocking the window, and mouse moves never become keys.
 function M.hover(row, col)
@@ -138,15 +148,32 @@ function M.hover(row, col)
     return
   end
   M.shape = shape
-  for _, ui in ipairs(vim.api.nvim_list_uis()) do
-    local info = ui.chan and vim.api.nvim_get_chan_info(ui.chan)
-    if info and info.client and info.client.name == "lazycode-app" then
-      vim.rpcnotify(ui.chan, "lazycode_cursor", shape)
+  notify("lazycode_cursor", shape)
+end
+
+--- Tells the window which text areas scrolled. Neovim sends it no `grid_scroll` while a
+--- floating window (like the Explorer) is open, so the window animates from these instead.
+local function scrolled()
+  for id, change in pairs(vim.v.event) do
+    local win = tonumber(id)
+    if
+      win
+      and change.topline ~= 0
+      and vim.api.nvim_win_is_valid(win)
+      and vim.api.nvim_win_get_config(win).relative == ""
+    then
+      local info = vim.fn.getwininfo(win)[1]
+      local top, left = info.winrow - 1 + info.winbar, info.wincol - 1 + info.textoff
+      notify("lazycode_scroll", top, top + info.height, left, info.wincol - 1 + info.width, change.topline)
     end
   end
 end
 
 function M.setup()
+  vim.api.nvim_create_autocmd(
+    "WinScrolled",
+    { group = vim.api.nvim_create_augroup("lazycode_scroll", {}), callback = scrolled }
+  )
   pcall(vim.api.nvim_del_augroup_by_name, "nvim.popupmenu")
   pcall(vim.cmd, "silent! aunmenu PopUp")
   for i, item in ipairs(items) do

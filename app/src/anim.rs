@@ -4,7 +4,7 @@ use crate::grid::{Cell, Scroll};
 /// How fast a scroll settles: the offset shrinks by e every this many milliseconds.
 const SCROLL_MS: f32 = 60.0;
 /// Length of the blink fade in and out.
-const FADE_MS: u64 = 150;
+const FADE_MS: u64 = 100;
 
 /// One scrolling region sliding back to rest, with the rows that already left it.
 pub struct ScrollAnim {
@@ -171,12 +171,12 @@ mod tests {
         let blink = [500, 530, 530];
         assert_eq!(blink_alpha(100, blink), 1.0);
         assert_eq!(blink_alpha(500, blink), 1.0);
-        assert!((blink_alpha(500 + 455, blink) - 0.5).abs() < 0.01);
+        assert!((blink_alpha(500 + 480, blink) - 0.5).abs() < 0.01);
         assert_eq!(blink_alpha(500 + 600, blink), 0.0);
-        assert!((blink_alpha(500 + 1060 - 75, blink) - 0.5).abs() < 0.01);
+        assert!((blink_alpha(500 + 1060 - 50, blink) - 0.5).abs() < 0.01);
         assert_eq!(blink_wait(100, blink), 400);
-        assert_eq!(blink_wait(500, blink), 380);
+        assert_eq!(blink_wait(500, blink), 430);
         assert_eq!(blink_wait(500 + 450, blink), 16);
-        assert_eq!(blink_wait(500 + 600, blink), 310);
+        assert_eq!(blink_wait(500 + 600, blink), 360);
     }
 }

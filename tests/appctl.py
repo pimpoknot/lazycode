@@ -46,7 +46,7 @@ class App:
             return
         xdotool("windowfocus", "--sync", self.window)
         if size:
-            w, h, pad, _ = self.header()
+            w, h, pad = self.header()[:3]
             xdotool("windowsize", "--sync", self.window, int(pad * 2 + size[0] * w), int(pad * 2 + size[1] * h))
             time.sleep(.5)
 
@@ -66,7 +66,7 @@ class App:
         return ("\x1b[?25l" if cursor and hidden else "") + text
 
     def point(self, row, col):
-        w, h, pad, _ = self.header()
+        w, h, pad = self.header()[:3]
         return int(pad + col * w + w / 2), int(pad + row * h + h / 2)
 
     def mouse(self, code, row, col, press):

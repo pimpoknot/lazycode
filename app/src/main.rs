@@ -1,6 +1,7 @@
 //! LazyCode native window: draws the embedded Neovim without a terminal.
 mod anim;
 mod grid;
+mod icon;
 mod input;
 mod nvim;
 mod render;
@@ -56,7 +57,8 @@ struct App {
 fn write_screen(path: &std::path::Path, ui: &Ui) {
     let (w, h) = ui.renderer.cell;
     let visible = ui.grid.cursor_shape().is_some() as u8;
-    let text = format!("{w} {h} {} {visible}\n{}", ui.renderer.pad, ui.grid.text());
+    let (pad, scrolled) = (ui.renderer.pad, ui.grid.scrolled);
+    let text = format!("{w} {h} {pad} {scrolled} {visible}\n{}", ui.grid.text());
     let partial = path.with_extension("partial");
     if std::fs::write(&partial, text).is_ok() {
         let _ = std::fs::rename(partial, path);
@@ -68,6 +70,7 @@ impl App {
         #[allow(unused_mut)]
         let mut attributes = Window::default_attributes()
             .with_title("LazyCode")
+            .with_window_icon(winit::window::Icon::from_rgba(icon::rgba(128), 128, 128).ok())
             .with_inner_size(LogicalSize::new(1200.0, 760.0));
         #[cfg(target_os = "macos")]
         {
@@ -124,6 +127,11 @@ fn handlers(
         move |method: &str, args: Value| {
             let event = match method {
                 "redraw" => UserEvent::Redraw(args),
+                // A window scrolled: the grid matches it against the next flush.
+                "lazycode_scroll" => UserEvent::Redraw(Value::Array(vec![Value::Array(vec![
+                    Value::from("lazycode_scroll"),
+                    args,
+                ])])),
                 "lazycode_cursor" => UserEvent::Pointer(
                     args.as_array()
                         .and_then(|a| a.first())
@@ -331,6 +339,11 @@ impl ApplicationHandler<UserEvent> for App {
                 {
                     if (ui.grid.cursor, ui.grid.cursor_shape()) != before {
                         ui.cursor_since = Instant::now();
+                    }
+                    if let Some(font) = ui.grid.guifont.take()
+                        && ui.renderer.set_font(&font)
+                    {
+                        ui.fit();
                     }
                     ui.window.request_redraw();
                     if let Some(path) = &self.screen {

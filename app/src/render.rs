@@ -7,7 +7,7 @@ use std::sync::Arc;
 use winit::window::Window;
 
 const ATLAS: u32 = 2048;
-const FONT_POINTS: f32 = 13.0; // The size LazyCode 0.1 used in kitty.
+const FONT_POINTS: f32 = 13.0; // Until Neovim's `guifont` says otherwise.
 const PADDING: f32 = 6.0;
 
 #[repr(C)]
@@ -17,6 +17,8 @@ struct Instance {
     size: [f32; 2],
     uv: [f32; 4],
     color: [f32; 4],
+    /// The color under a glyph, so its edges blend in linear light like kitty's.
+    bg: [f32; 4],
     glyph: f32,
 }
 
@@ -62,6 +64,32 @@ fn rgba(c: u32) -> [f32; 4] {
     ]
 }
 
+/// Until `guifont` arrives: the same fonts `lazycode/font.lua` asks for.
+const DEFAULT_FAMILY: &str = "FiraCode Nerd Font Mono,JetBrainsMono Nerd Font Mono";
+const DEFAULT_WEIGHT: u16 = 600;
+
+/// The families in order, size and weight of a `guifont` like `Fira Code,Hack:h14:w600`.
+/// Underscores stand for spaces, as other Neovim GUIs accept.
+pub fn parse_guifont(value: &str) -> (Vec<String>, Option<f32>, Option<u16>) {
+    let mut parts = value.split(':');
+    let families = parts
+        .next()
+        .unwrap_or_default()
+        .split(',')
+        .map(|f| f.trim().replace('_', " "))
+        .filter(|f| !f.is_empty())
+        .collect();
+    let options: Vec<&str> = parts.collect();
+    let option = |prefix: char| options.iter().filter_map(move |p| p.strip_prefix(prefix));
+    let points = option('h')
+        .filter_map(|p| p.parse::<f32>().ok())
+        .find(|p| (4.0..=96.0).contains(p));
+    let weight = option('w')
+        .filter_map(|p| p.parse::<u16>().ok())
+        .find(|w| (100..=900).contains(w));
+    (families, points, weight)
+}
+
 /// Nerd Font icons live in the Private Use Areas.
 fn is_icon(c: char) -> bool {
     matches!(c, '\u{e000}'..='\u{f8ff}' | '\u{f0000}'..='\u{ffffd}')
@@ -73,8 +101,12 @@ fn fit(w: f32, h: f32, box_w: f32, box_h: f32) -> f32 {
 }
 
 /// Font size, baseline, padding and cell size in physical pixels for a display scale.
-fn metrics(font: &fontdue::Font, scale: f32) -> Result<(f32, f32, f32, (f32, f32)), String> {
-    let px = (FONT_POINTS * 96.0 / 72.0 * scale).round();
+fn metrics(
+    font: &fontdue::Font,
+    points: f32,
+    scale: f32,
+) -> Result<(f32, f32, f32, (f32, f32)), String> {
+    let px = (points * 96.0 / 72.0 * scale).round();
     let line = font
         .horizontal_line_metrics(px)
         .ok_or("The font has no line metrics.")?;
@@ -89,19 +121,26 @@ fn metrics(font: &fontdue::Font, scale: f32) -> Result<(f32, f32, f32, (f32, f32
 
 /// Regular, bold, italic and bold italic, indexed by `bold | italic << 1`, then the
 /// Nerd Font symbols that the installer pins for icons the main font lacks.
-fn load_fonts() -> Result<([fontdue::Font; 4], Option<fontdue::Font>), String> {
+fn load_fonts(
+    names: &[String],
+    weight: u16,
+) -> Result<([fontdue::Font; 4], Option<fontdue::Font>), String> {
     use fontdb::{Family, Query, Style, Weight};
     let mut db = fontdb::Database::new();
     db.load_system_fonts();
     if let Some(dir) = std::env::var_os("LAZYCODE_FONT_DIR") {
         db.load_fonts_dir(dir);
     }
-    let families = [
-        Family::Name("JetBrainsMono Nerd Font Mono"),
-        Family::Name("JetBrainsMono Nerd Font"),
-        Family::Name("JetBrains Mono"),
-        Family::Monospace,
-    ];
+    // The text fonts the installer pins, so `lazycode/font.lua` finds them on every machine.
+    if let Some(dirs) = crate::nvim::runtime().and_then(|r| std::fs::read_dir(r).ok()) {
+        for dir in dirs.flatten() {
+            if dir.file_name().to_string_lossy().starts_with("font-") {
+                db.load_fonts_dir(dir.path());
+            }
+        }
+    }
+    let mut families: Vec<Family> = names.iter().map(|n| Family::Name(n)).collect();
+    families.extend([Family::Name("JetBrains Mono"), Family::Monospace]);
     let load = |weight, style| -> Result<fontdue::Font, String> {
         let id = db
             .query(&Query {
@@ -121,10 +160,10 @@ fn load_fonts() -> Result<([fontdue::Font; 4], Option<fontdue::Font>), String> {
         .ok_or("Could not read the font.")?
     };
     let fonts = [
-        load(Weight::NORMAL, Style::Normal)?,
-        load(Weight::BOLD, Style::Normal)?,
-        load(Weight::NORMAL, Style::Italic)?,
-        load(Weight::BOLD, Style::Italic)?,
+        load(Weight(weight), Style::Normal)?,
+        load(Weight((weight + 300).clamp(700, 900)), Style::Normal)?,
+        load(Weight(weight), Style::Italic)?,
+        load(Weight((weight + 300).clamp(700, 900)), Style::Italic)?,
     ];
     // The pinned copy wins: distributions package older symbol fonts under the same name.
     let pinned = crate::nvim::runtime()
@@ -155,6 +194,9 @@ pub struct Renderer {
     atlas: Atlas,
     fonts: [fontdue::Font; 4],
     symbols: Option<fontdue::Font>,
+    /// Families, weight and size in points, from `guifont`.
+    font: (Vec<String>, u16, f32),
+    scale: f32,
     px: f32,
     baseline: f32,
     pub pad: f32,
@@ -283,7 +325,8 @@ impl Renderer {
             push_constant_ranges: &[],
         });
         let attributes = wgpu::vertex_attr_array![
-            0 => Float32x2, 1 => Float32x2, 2 => Float32x4, 3 => Float32x4, 4 => Float32
+            0 => Float32x2, 1 => Float32x2, 2 => Float32x4, 3 => Float32x4, 4 => Float32x4,
+            5 => Float32
         ];
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
@@ -320,8 +363,8 @@ impl Renderer {
 
         let capacity = 16_384;
         let buffer = Self::instance_buffer(&device, capacity);
-        let (fonts, symbols) = load_fonts()?;
-        let (px, baseline, pad, cell) = metrics(&fonts[0], scale)?;
+        let (fonts, symbols) = load_fonts(&parse_guifont(DEFAULT_FAMILY).0, DEFAULT_WEIGHT)?;
+        let (px, baseline, pad, cell) = metrics(&fonts[0], FONT_POINTS, scale)?;
         let renderer = Self {
             surface,
             device,
@@ -336,6 +379,8 @@ impl Renderer {
             atlas: Atlas::default(),
             fonts,
             symbols,
+            font: (parse_guifont(DEFAULT_FAMILY).0, DEFAULT_WEIGHT, FONT_POINTS),
+            scale,
             px,
             baseline,
             pad,
@@ -381,7 +426,38 @@ impl Renderer {
 
     /// Moving to a display with another scale re-rasterizes every glyph at the new size.
     pub fn set_scale(&mut self, scale: f32) {
-        if let Ok((px, baseline, pad, cell)) = metrics(&self.fonts[0], scale) {
+        self.scale = scale;
+        self.remeasure();
+    }
+
+    /// Applies `guifont`. Returns true when the cell size may have changed.
+    pub fn set_font(&mut self, guifont: &str) -> bool {
+        let (families, points, weight) = parse_guifont(guifont);
+        let font = (
+            if families.is_empty() {
+                parse_guifont(DEFAULT_FAMILY).0
+            } else {
+                families
+            },
+            weight.unwrap_or(400),
+            points.unwrap_or(FONT_POINTS),
+        );
+        if font == self.font {
+            return false;
+        }
+        if (&font.0, font.1) != (&self.font.0, self.font.1) {
+            match load_fonts(&font.0, font.1) {
+                Ok((fonts, _)) => self.fonts = fonts,
+                Err(_) => return false,
+            }
+        }
+        self.font = font;
+        self.remeasure();
+        true
+    }
+
+    fn remeasure(&mut self) {
+        if let Ok((px, baseline, pad, cell)) = metrics(&self.fonts[0], self.font.2, self.scale) {
             (self.px, self.baseline, self.pad, self.cell) = (px, baseline, pad, cell);
             self.atlas = Atlas::default();
         }
@@ -485,17 +561,19 @@ impl Renderer {
             size: [w, h],
             uv: [0.0; 4],
             color: rgba(color),
+            bg: [0.0; 4],
             glyph: 0.0,
         });
     }
 
-    fn text(&mut self, ch: char, font: u8, x: f32, y: f32, color: u32) -> Result<(), ()> {
+    fn text(&mut self, ch: char, font: u8, x: f32, y: f32, color: u32, bg: u32) -> Result<(), ()> {
         if let Some(g) = self.glyph(ch, font)? {
             self.data.push(Instance {
                 pos: [x + g.offset[0], y + self.baseline + g.offset[1]],
                 size: g.size,
                 uv: g.uv,
                 color: rgba(color),
+                bg: rgba(bg),
                 glyph: 1.0,
             });
         }
@@ -521,13 +599,13 @@ impl Renderer {
         }
         for (i, cell) in cells.iter().enumerate().filter(|(i, _)| !skip(*i)) {
             let style = grid.style(cell.hl);
-            let fg = grid.colors(&style).0;
+            let (fg, bg) = grid.colors(&style);
             let x = x0 + i as f32 * cw;
             if cell.ch != ' ' && cell.ch != '\0' {
                 let font = style.bold as u8 | (style.italic as u8) << 1;
                 // Like kitty: an icon followed by a space takes both cells, so it reads at text size.
                 let wide = is_icon(cell.ch) && cells.get(i + 1).is_some_and(|n| n.ch == ' ');
-                self.text(cell.ch, font | (wide as u8) << 2, x, y, fg)?;
+                self.text(cell.ch, font | (wide as u8) << 2, x, y, fg, bg)?;
             }
             if style.underline {
                 let color = style.sp.unwrap_or(fg);
@@ -610,7 +688,7 @@ impl Renderer {
                     self.rect(x, y, cw, ch, fg);
                     if cell.ch != ' ' && cell.ch != '\0' {
                         let font = style.bold as u8 | (style.italic as u8) << 1;
-                        self.text(cell.ch, font, x, y, bg)?;
+                        self.text(cell.ch, font, x, y, bg, fg)?;
                     }
                 }
                 CursorShape::Vertical => self.rect(x, y, (cw * part).ceil().max(2.0), ch, fg),
@@ -709,6 +787,21 @@ impl Renderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn guifont_gives_families_in_order_size_and_weight() {
+        let font = |f: &[&str], h, w| (f.iter().map(|s| s.to_string()).collect::<Vec<_>>(), h, w);
+        assert_eq!(
+            parse_guifont("JetBrains Mono:h14"),
+            font(&["JetBrains Mono"], Some(14.0), None)
+        );
+        assert_eq!(
+            parse_guifont("Fira_Code, Hack:w600:h12.5"),
+            font(&["Fira Code", "Hack"], Some(12.5), Some(600))
+        );
+        assert_eq!(parse_guifont(""), font(&[], None, None));
+        assert_eq!(parse_guifont("Hack:h0:w5"), font(&["Hack"], None, None));
+    }
 
     #[test]
     fn atlas_wraps_shelves_and_reports_full() {

@@ -18,6 +18,9 @@ ASSETS = {
         ("macos", "x86_64"): "nvim-macos-x86_64.tar.gz",
         ("macos", "arm64"): "nvim-macos-arm64.tar.gz",
     }),
+    # Text fonts for the window (lazycode/font.lua), from the same Nerd Fonts release.
+    "font-firacode": ("ryanoasis/nerd-fonts", {platform: "FiraCode.tar.xz" for platform in PLATFORMS}),
+    "font-jetbrainsmono": ("ryanoasis/nerd-fonts", {platform: "JetBrainsMono.tar.xz" for platform in PLATFORMS}),
     # Icons for the window when the main font has none. Same file on every platform.
     "fonts": ("ryanoasis/nerd-fonts", {platform: "NerdFontsSymbolsOnly.tar.xz" for platform in PLATFORMS}),
     "lazygit": ("jesseduffield/lazygit", {

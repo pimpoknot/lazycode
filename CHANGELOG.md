@@ -17,6 +17,14 @@
 - The cursor blinks with a fade, and scrolling is animated.
 - Activity bar icons are spaced out and answer clicks on the rows around them.
 - The noice command line popup is gone: messages go to `:messages` and notifications.
+- Text uses FiraCode Nerd Font Mono SemiBold at 13 pt, with JetBrains Mono as fallback. Both are
+  pinned by the installer, so every machine shows the same font. `Ctrl+=`, `Ctrl+-` and `Ctrl+0`
+  change the size, and `guifont` picks another font.
+- Text is drawn as bold and bright as kitty drew it.
+- The window and the macOS app have the LazyCode icon.
+- Tabs start above the editor, after the open side panel.
+- Search ignores case for lowercase queries, like VS Code, and `Ctrl+Alt+Enter` replaces all.
+- Scrolling is smooth with the Explorer open too, and the cursor blinks faster.
 - Files changed in other apps reload when you come back to the window.
 - `lazycode doctor` warns on Linux when no clipboard tool is installed.
 - Copilot (native), ESLint and Prettier come enabled, with format on save for JavaScript and

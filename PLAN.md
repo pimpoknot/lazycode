@@ -3,7 +3,7 @@
 The whole plan in one place: what LazyCode is, how it is built, where it stands and what comes
 next. Update it when work lands or a decision changes.
 
-Last updated: 2026-11-25 · Released: `0.1.0` (stable) · In progress: `0.2.0`, the native window
+Last updated: 2026-11-26 · Released: `0.1.0` (stable) · In progress: `0.2.0`, the native window
 
 ## Contents
 
@@ -146,8 +146,12 @@ The repository root is the Neovim config. LazyCode's own code lives in:
 
 How it renders:
 
-- **Text font:** the system monospace font from fontdb at 13 pt, the size `0.1.0` used in kitty.
-  `LAZYCODE_FONT_DIR` points it at another font folder.
+- **Text font:** Neovim's `guifont`, set by `lua/lazycode/font.lua`: FiraCode Nerd Font Mono
+  SemiBold at 13 pt, then JetBrainsMono Nerd Font Mono SemiBold, then the system monospace font.
+  The installer pins both fonts, keeping only their Mono files. `guifont` takes a list of families,
+  `:h` for the size and `:w` for the weight. `LAZYCODE_FONT_DIR` adds another font folder.
+- **Text weight:** the surface blends in gamma space so theme colors stay exact, and the shader
+  gives glyph edges the alpha a linear-light blend would, so text looks like kitty's.
 - **Icon font:** the pinned Symbols Nerd Font Mono, loaded by path before the system is asked.
   Distribution packages lack many icons.
 - **Icon width:**
@@ -334,6 +338,15 @@ Done before the PR:
   `wl-clipboard`, since the native window has no terminal for OSC 52. `lazycode doctor` warns and
   the README says so.
 - [x] **Resize test:** the `app` suite drags a panel border and checks the Explorer width.
+- [x] **Smooth scroll with the Explorer open.** Floating windows stop `grid_scroll`, so Lua
+  reports `WinScrolled` and the window animates when the rows really moved since the last frame.
+  Snacks scroll is off. Moving to `ext_multigrid` would also scroll line numbers with the text.
+- [x] **Fonts:** pinned FiraCode and JetBrains Mono, `guifont` with fallbacks, size and weight, and
+  `Ctrl+=`, `Ctrl+-`, `Ctrl+0` zoom that is remembered.
+- [x] **Icons:** the window icon on Linux and `LazyCode.icns` in the macOS app
+  (`scripts/generate-icon.py`).
+- [x] **Tabs** start after the open side panel, like VS Code.
+- [x] **Search:** smart case, plain-language hints, `Ctrl+Alt+Enter` replaces all.
 
 Then:
 
@@ -351,20 +364,9 @@ Then:
 
 ### `0.2.x`: native window polish
 
-- [ ] **Smooth scroll with the Explorer open.**
-  - Today: any floating window stops Neovim from sending `grid_scroll`, and the Explorer is made of
-    floats. It is open most of the time, so the pixel scroll seldom runs, and Snacks scroll
-    animates instead.
-  - Fix: move to `ext_multigrid`, where each window has its own grid and `win_viewport` reports
-    scroll deltas even while floats are open (Neovide works this way).
-  - Cost: per-grid state in `grid.rs`, float positions, and composing the grids in `render.rs`.
 - [ ] **Neovim left running.** After Reload Window, the window is only a socket client, so
   killing the window leaves Neovim running (a normal close is fine). Stop the server when the
   window exits.
-- [ ] **Font settings.** The `0.1.0` kitty.conf override is gone, so the font cannot be changed
-  today.
-  - Read `guifont` (family and size) from the `option_set` UI event.
-  - Add `Ctrl+=`, `Ctrl+-` and `Ctrl+0` zoom like VS Code.
 - [ ] **Window title.** It is always "LazyCode". Use Neovim's `set_title` event to show the folder
   and file.
 - [ ] **Undercurl.** Diagnostics are drawn with a straight underline. Draw a wave like VS Code.
@@ -405,9 +407,11 @@ As of the `0.2.0` branch:
 - **Text:**
   - Emoji and CJK characters show as boxes.
   - Input methods (IME) are not supported.
-- **Scrolling:** the pixel scroll rarely runs while the Explorer is open (see the roadmap).
+- **Scrolling:** with the Explorer open, line numbers jump to their final value while the text
+  slides.
 - **Window:**
-  - The title is fixed and the font cannot be changed.
+  - The title is fixed.
+  - A font chosen with `:set guifont` is not remembered, only the zoom size.
   - Undercurl is drawn straight.
 - **Clipboard:** on Linux, copy and paste with other apps needs a clipboard tool.
 - **Reload Window:** killing the window afterwards leaves Neovim running.
@@ -445,6 +449,8 @@ As of the `0.2.0` branch:
 | 0.2.0 | Reload Window uses `:restart` | Neovim 0.12 restarts the server and the window joins it again, keeping the folder and files |
 | 0.2.0 | noice disabled | It fails on the `restart` event |
 | 0.2.0 | Icon font pinned and loaded by path | Distribution fonts lack many icons |
+| 0.2.0 | FiraCode SemiBold 13 pt by default, JetBrains Mono as fallback, both pinned | Same look on every machine; `0.1.0` only looked right with a personal kitty.conf |
+| 0.2.0 | Smooth scroll from `WinScrolled` instead of `ext_multigrid` | Small change that works with the Explorer's floats |
 | 0.2.0 | Copilot, ESLint, Prettier on; Rust only with `cargo` | Common needs out of the box, without Rust tools for people who do not use Rust |
 
 ## 12. Working agreements

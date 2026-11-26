@@ -9,6 +9,7 @@ function M.setup()
   require("lazycode.mouse").setup()
   require("lazycode.explorer").setup()
   require("lazycode.sidebar").setup()
+  require("lazycode.font").setup()
 
   local editing = require("lazycode.editing")
   local project = require("lazycode.project")

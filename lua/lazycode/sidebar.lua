@@ -88,6 +88,22 @@ local function hide(id)
   end
 end
 
+local PANELS = { snacks_layout_box = true, ["grug-far"] = true, lazycode_side = true }
+
+--- Columns taken by the open side panel and its border, so the tabs start above the editor.
+function M.panel_columns()
+  local layout = vim.fn.winlayout()
+  if layout[1] ~= "row" or #layout[2] < 3 then
+    return 0
+  end
+  local panel = layout[2][2]
+  while panel[1] ~= "leaf" do
+    panel = panel[2][1]
+  end
+  local win = panel[2]
+  return PANELS[vim.bo[vim.api.nvim_win_get_buf(win)].filetype] and vim.api.nvim_win_get_width(win) + 1 or 0
+end
+
 function M.render()
   if not (bar_buf and vim.api.nvim_buf_is_valid(bar_buf)) then
     return
@@ -283,6 +299,13 @@ function M.toggle_sidebar()
 end
 
 function M.setup()
+  -- The tabs start after the open panel (see panel_columns), so redraw them when panels open or close.
+  vim.api.nvim_create_autocmd({ "WinNew", "WinClosed", "WinResized" }, {
+    group = vim.api.nvim_create_augroup("lazycode_tabline", {}),
+    callback = vim.schedule_wrap(function()
+      vim.cmd.redrawtabline()
+    end),
+  })
   -- Snacks keeps its WinResized handler after closing a picker, and rendering then fails on the nil picker.
   local List = require("snacks.picker.core.list")
   local render = List.render

@@ -12,6 +12,8 @@ ripgrep      https://github.com/BurntSushi/ripgrep    (MIT or Unlicense)
 fd           https://github.com/sharkdp/fd            (MIT or Apache-2.0)
 Node.js      https://github.com/nodejs/node           (MIT and others)
 Nerd Fonts   https://github.com/ryanoasis/nerd-fonts  (MIT, symbols under their own licenses)
+Fira Code    https://github.com/tonsky/FiraCode       (SIL Open Font License 1.1), as patched by Nerd Fonts
+JetBrains Mono https://github.com/JetBrains/JetBrainsMono (SIL Open Font License 1.1), as patched by Nerd Fonts
 
 Neovim plugins are listed in lazy-lock.json and are fetched from their own repositories.
 

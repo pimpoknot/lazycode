@@ -58,6 +58,8 @@ return {
     opts = {
       -- The start screen is the LazyCode Welcome tab.
       dashboard = { enabled = false },
+      -- The LazyCode window scrolls by pixels; Snacks would move the text a line at a time.
+      scroll = { enabled = false },
       -- Like VS Code, a single Esc cancels text prompts.
       styles = {
         -- The terminal keeps every key for the shell.
@@ -133,13 +135,43 @@ return {
     },
   },
   {
+    "MagicDuck/grug-far.nvim",
+    opts = {
+      -- Like VS Code: a lowercase search ignores case, and Ctrl+Alt+Enter replaces all.
+      extraRgArgs = "--smart-case",
+      debounceMs = 250,
+      helpLine = { enabled = false },
+      showEngineInfo = false,
+      showInputsTopPadding = false,
+      engines = {
+        ripgrep = {
+          placeholders = {
+            search = "Search the project",
+            replacement = "Replace with (Ctrl+Alt+Enter: all)",
+            filesFilter = "Files to include: *.ts  src/**",
+            flags = "-s match case  -w word  -F plain",
+            paths = "Folders (default: the project)",
+          },
+        },
+      },
+      keymaps = { replace = { n = "<localleader>r", i = "<C-M-CR>" } },
+    },
+  },
+  {
     "akinsho/bufferline.nvim",
     opts = function(_, opts)
       opts.options = opts.options or {}
       opts.options.always_show_bufferline = true
       opts.options.offsets = opts.options.offsets or {}
-      table.insert(opts.options.offsets, 1, { filetype = "lazycode_bar" })
-      table.insert(opts.options.offsets, 2, { filetype = "lazycode_side" })
+      -- bufferline only measures the first column, so the bar's offset grows by the open panel.
+      local bar = setmetatable({ filetype = "lazycode_bar" }, {
+        __index = function(_, key)
+          if key == "padding" then
+            return require("lazycode.sidebar").panel_columns()
+          end
+        end,
+      })
+      table.insert(opts.options.offsets, 1, bar)
     end,
   },
   {

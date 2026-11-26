@@ -24,7 +24,7 @@ curl -fsSL https://raw.githubusercontent.com/pimpoknot/lazycode/main/install.sh 
 The installer needs `curl`, `tar`, `git` and, on Linux, `xz`. A C compiler is recommended for
 syntax highlighting. On Linux, copy and paste with other apps needs `wl-clipboard`, `xclip` or `xsel`. It does not use `sudo` and does not touch your Neovim setup.
 LazyCode runs in its own native window. That window, Neovim, lazygit, ripgrep, fd, Node and the
-icon font are downloaded at pinned versions, verified with SHA-256 and kept in
+fonts (FiraCode and JetBrains Mono Nerd Font, plus icons) are downloaded at pinned versions, verified with SHA-256 and kept in
 `~/.local/share/lazycode-runtime`. Without a prebuilt window for your system, the installer
 builds it with Rust when `cargo` is available.
 
@@ -93,6 +93,9 @@ On macOS, use `Cmd` in place of `Ctrl`, except for `` Ctrl+` ``, `Ctrl+Tab` and 
 - Reload Window (the last activity bar icon, or `:LazyCodeReload`) applies extension changes
   without closing LazyCode.
 - More languages and plugins: `:LazyExtras`
+- Font size: `Ctrl+=`, `Ctrl+-` and `Ctrl+0`, like VS Code. The size is remembered.
+- Font: FiraCode Nerd Font Mono SemiBold, or JetBrains Mono where FiraCode is missing. Try another
+  one with `:set guifont=Hack:h14:w500` (name as `fc-list : family` shows it, size, weight).
 
 ## Known limitations
 

@@ -130,6 +130,11 @@ install_tool() {
   mkdir -p "$staging"
   case "$tool:$OS" in
     fonts:*) tar -xJf "$file" -C "$staging" ;;
+    font-*:*)
+      # Each archive has every Nerd Font variant: keep the Mono ones the window uses, with ligatures.
+      tar -xJf "$file" -C "$staging"
+      find "$staging" -name '*.[ot]tf' \( ! -name '*NerdFontMono-*' -o -name '*NLNerdFontMono-*' \) -exec rm -f {} +
+      ;;
     lazygit:*) tar -xzf "$file" -C "$staging" ;;
     *) tar -xzf "$file" -C "$staging" --strip-components=1 ;;
   esac
@@ -251,7 +256,9 @@ install_launchers() {
     bundle="$HOME/Applications/LazyCode.app"
     rm -rf -- "$bundle"
     mkdir -p "$bundle/Contents/MacOS"
+    mkdir -p "$bundle/Contents/Resources"
     cp "$CONFIG/packaging/macos/Info.plist" "$bundle/Contents/Info.plist"
+    cp "$CONFIG/packaging/macos/LazyCode.icns" "$bundle/Contents/Resources/LazyCode.icns"
     # The window itself lives in the bundle, so the Dock shows LazyCode.
     cp "$RUNTIME/bin/lazycode-app" "$bundle/Contents/MacOS/LazyCode"
     printf '%s\n' "$bundle" >>"$RUNTIME/manifest"

@@ -12,7 +12,7 @@ vim.o.timeoutlen = 400
 vim.o.cmdheight = 0
 vim.o.messagesopt = "wait:0,history:500"
 -- Blinks like VS Code. The LazyCode window fades it in and out.
-local blink = "-blinkwait500-blinkon530-blinkoff530"
+local blink = "-blinkwait400-blinkon400-blinkoff400"
 vim.o.guicursor = "n-v-c-sm:block" .. blink .. ",i-ci-ve:ver25" .. blink .. ",r-cr-o:hor20,t:block-TermCursor"
 local lg = vim.fn.stdpath("config") .. "/assets/lazygit.yml"
 vim.env.LG_CONFIG_FILE = lg
