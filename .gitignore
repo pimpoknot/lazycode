@@ -9,3 +9,6 @@ data
 __pycache__/
 *.pyc
 .DS_Store
+
+# Prebuilt window that CI and Homebrew hand to install.sh
+/bin/lazycode-app

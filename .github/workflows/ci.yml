@@ -33,22 +33,33 @@ jobs:
           python3 scripts/generate-logo.py
           git diff --exit-code assets/logo.svg
 
+  app:
+    name: App
+    uses: ./.github/workflows/app.yml
+
   e2e:
     name: E2E (${{ matrix.suite }})
+    needs: app
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        suite: [editing, terminal, welcome, explorer, kitty, complete]
+        suite: [editing, terminal, welcome, explorer, app, complete]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: System packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential tmux xvfb xz-utils libglib2.0-bin \
+          sudo apt-get install -y build-essential tmux xvfb xdotool xz-utils libglib2.0-bin \
             libgl1 libegl1 libgl1-mesa-dri libxcursor1 libxi6 libxrandr2 libxinerama1 \
             libxkbcommon-x11-0 libxcb-xkb1 libfontconfig1 fonts-dejavu-core
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: app-linux-x86_64
+          path: bin
+      - name: Prebuilt window
+        run: chmod +x bin/lazycode-app
       - name: Install from a clean home
         run: |
           home="$RUNNER_TEMP/home"
@@ -73,6 +84,7 @@ jobs:
 
   install-linux:
     name: Install (${{ matrix.image }})
+    needs: app
     runs-on: ubuntu-latest
     timeout-minutes: 20
     container: ${{ matrix.image }}
@@ -92,6 +104,12 @@ jobs:
       - name: System packages
         run: ${{ matrix.setup }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: app-linux-x86_64
+          path: bin
+      - name: Prebuilt window
+        run: chmod +x bin/lazycode-app
       - name: Install, check and remove as a regular user
         run: |
           useradd -m tester
@@ -99,47 +117,59 @@ jobs:
           chown -R tester /home/tester/source
           su - tester -c 'LAZYCODE_SKIP_TOOLS=1 LAZYCODE_SOURCE=$HOME/source sh source/install.sh'
           su - tester -c '.local/bin/lazycode doctor'
+          su - tester -c '.local/share/lazycode-runtime/bin/lazycode-app --version'
           su - tester -c '.local/bin/lazycode uninstall --yes && test ! -e .local/bin/lazycode'
 
   install-arm:
     name: Install (Linux arm64)
+    needs: app
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: app-linux-arm64
+          path: bin
+      - name: Prebuilt window
+        run: chmod +x bin/lazycode-app
       - name: Install, check and remove
         run: |
           export HOME="$RUNNER_TEMP/home"
           mkdir -p "$HOME"
           LAZYCODE_SKIP_TOOLS=1 LAZYCODE_SOURCE="$GITHUB_WORKSPACE" sh install.sh
           "$HOME/.local/bin/lazycode" doctor
+          "$HOME/.local/share/lazycode-runtime/bin/lazycode-app" --version
           "$HOME/.local/bin/lazycode" uninstall --yes
           test ! -e "$HOME/.local/bin/lazycode"
 
   install-macos:
     name: Install (${{ matrix.runner }})
+    needs: app
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        runner: [macos-latest, macos-15-intel]
+        include:
+          - { runner: macos-latest, arch: arm64 }
+          - { runner: macos-15-intel, arch: x86_64 }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: app-macos-${{ matrix.arch }}
+          path: bin
+      - name: Prebuilt window
+        run: chmod +x bin/lazycode-app
       - name: Install, check and remove
         run: |
           export HOME="$RUNNER_TEMP/home"
           mkdir -p "$HOME"
           LAZYCODE_SKIP_TOOLS=1 LAZYCODE_SOURCE="$GITHUB_WORKSPACE" sh install.sh
           "$HOME/.local/bin/lazycode" doctor
-          test -x "$HOME/Applications/LazyCode.app/Contents/MacOS/LazyCode"
-          # kitty validates the launcher's real arguments, and --version stops before opening a window.
-          bin="$HOME/.local/share/lazycode-runtime/bin"
-          mv "$bin/kitty" "$bin/kitty.real"
-          printf '#!/bin/sh\n"%s" --version "$@" && touch "%s"\n' "$bin/kitty.real" "$HOME/kitty-ok" > "$bin/kitty"
-          chmod +x "$bin/kitty"
-          PATH="$bin:$PATH" "$HOME/.local/bin/lazycode" __window
-          test -f "$HOME/kitty-ok"
+          # The bundle runs the window itself; --version stops before opening it.
+          "$HOME/Applications/LazyCode.app/Contents/MacOS/LazyCode" --version
           "$HOME/.local/bin/lazycode" uninstall --yes
           test ! -e "$HOME/.local/bin/lazycode"
 
@@ -168,7 +198,7 @@ jobs:
   ci-ok:
     name: CI OK
     if: always()
-    needs: [lint, e2e, install-linux, install-arm, install-macos, homebrew]
+    needs: [lint, app, e2e, install-linux, install-arm, install-macos, homebrew]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:

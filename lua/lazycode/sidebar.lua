@@ -1,14 +1,31 @@
--- Activity bar and the single side panel: Explorer, Search and lazygit.
+-- Activity bar and the single side panel: Explorer, Search, lazygit and Extensions.
 local M = { width = 46, active = nil, last = "explorer", changes = 0 }
 
 local BAR_WIDTH = 4
 local bar_buf, bar_win, lg
 local ns = vim.api.nvim_create_namespace("lazycode_bar")
+-- Icons sit in columns 2-3 of 4 (the window draws them two cells wide), 3 rows apart, and each
+-- answers clicks on its own row and the rows around it. The git badge sits right below its icon.
+-- The terminal and Reload are not side panels.
 local items = {
   { id = "explorer", icon = "󰉋", row = 2 },
-  { id = "search", icon = "󰍉", row = 4 },
-  { id = "git", icon = "󰊢", row = 6 },
+  { id = "search", icon = "󰍉", row = 5 },
+  { id = "git", icon = "󰊢", row = 8 },
+  { id = "terminal", icon = "󰆍", row = 11, panel = false },
+  { id = "extensions", icon = "󰐱", row = 14 },
+  { id = "reload", icon = "󰑓", row = 17, panel = false },
 }
+local BADGE = 9
+local SEARCH = "lazycode_search"
+
+--- The bar item for a buffer line of the bar, if any.
+function M.item_at(line)
+  for _, item in ipairs(items) do
+    if math.abs(line - item.row) <= 1 then
+      return item
+    end
+  end
+end
 
 local function pickers(source)
   return Snacks.picker.get({ source = source })
@@ -18,17 +35,43 @@ local function no_folder()
   return require("lazycode.project").folder == nil
 end
 
+local function terminal_open()
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if
+      vim.api.nvim_win_get_config(win).relative == "" and vim.bo[vim.api.nvim_win_get_buf(win)].buftype == "terminal"
+    then
+      return true
+    end
+  end
+  return false
+end
+
 local function visible(id)
+  if id == "terminal" then
+    return terminal_open()
+  elseif id == "extensions" then
+    return #pickers("lazycode_extensions") > 0
+  elseif id == "reload" then
+    return require("lazycode.extensions").pending()
+  end
   if no_folder() then
     return require("lazycode.welcome").side_visible(id)
   end
   if id == "git" then
     return lg ~= nil and lg:win_valid()
+  elseif id == "search" then
+    return package.loaded["grug-far"] ~= nil and require("grug-far").is_instance_open(SEARCH)
   end
-  return #pickers(id == "search" and "grep" or "explorer") > 0
+  return #pickers("explorer") > 0
 end
 
 local function hide(id)
+  if id == "extensions" then
+    for _, picker in ipairs(pickers("lazycode_extensions")) do
+      picker:close()
+    end
+    return
+  end
   if no_folder() then
     return require("lazycode.welcome").close_side()
   end
@@ -37,10 +80,28 @@ local function hide(id)
       lg:hide()
     end
     return
+  elseif id == "search" then
+    return package.loaded["grug-far"] and require("grug-far").hide_instance(SEARCH)
   end
-  for _, picker in ipairs(pickers(id == "search" and "grep" or "explorer")) do
+  for _, picker in ipairs(pickers("explorer")) do
     picker:close()
   end
+end
+
+local PANELS = { snacks_layout_box = true, ["grug-far"] = true, lazycode_side = true }
+
+--- Columns taken by the open side panel and its border, so the tabs start above the editor.
+function M.panel_columns()
+  local layout = vim.fn.winlayout()
+  if layout[1] ~= "row" or #layout[2] < 3 then
+    return 0
+  end
+  local panel = layout[2][2]
+  while panel[1] ~= "leaf" do
+    panel = panel[2][1]
+  end
+  local win = panel[2]
+  return PANELS[vim.bo[vim.api.nvim_win_get_buf(win)].filetype] and vim.api.nvim_win_get_width(win) + 1 or 0
 end
 
 function M.render()
@@ -55,18 +116,18 @@ function M.render()
     lines[item.row] = " " .. item.icon
   end
   if M.changes > 0 then
-    lines[7] = " " .. (M.changes > 99 and "99" or tostring(M.changes))
+    lines[BADGE] = " " .. (M.changes > 99 and "99" or tostring(M.changes))
   end
   vim.bo[bar_buf].modifiable = true
   vim.api.nvim_buf_set_lines(bar_buf, 0, -1, false, lines)
   vim.bo[bar_buf].modifiable = false
   vim.api.nvim_buf_clear_namespace(bar_buf, ns, 0, -1)
   for _, item in ipairs(items) do
-    local hl = visible(item.id) and "Function" or "Comment"
+    local hl = visible(item.id) and (item.id == "reload" and "DiagnosticWarn" or "Function") or "Comment"
     vim.api.nvim_buf_set_extmark(bar_buf, ns, item.row - 1, 0, { end_col = #lines[item.row], hl_group = hl })
   end
   if M.changes > 0 then
-    vim.api.nvim_buf_set_extmark(bar_buf, ns, 6, 0, { end_col = #lines[7], hl_group = "DiagnosticWarn" })
+    vim.api.nvim_buf_set_extmark(bar_buf, ns, BADGE - 1, 0, { end_col = #lines[BADGE], hl_group = "DiagnosticWarn" })
   end
 end
 
@@ -90,14 +151,17 @@ function M.refresh_git()
 end
 
 local function click()
-  local pos = vim.fn.getmousepos()
-  for _, item in ipairs(items) do
-    if pos.line == item.row or (item.id == "git" and pos.line == 7) then
-      M.toggle(item.id)
-      return
-    end
-  end
+  local item = M.item_at(vim.fn.getmousepos().line)
   vim.cmd.wincmd("p")
+  if not item then
+    return
+  elseif item.id == "terminal" then
+    require("lazycode.terminal").toggle()
+  elseif item.id == "reload" then
+    require("lazycode.project").reload()
+  else
+    M.toggle(item.id)
+  end
 end
 
 local function ensure_bar()
@@ -116,6 +180,8 @@ local function ensure_bar()
   M.render()
 end
 
+M.ensure_bar = ensure_bar
+
 local function fix_layout()
   if not (bar_win and vim.api.nvim_win_is_valid(bar_win)) then
     return
@@ -133,7 +199,9 @@ local function fix_layout()
 end
 
 local function show(id, opts)
-  if no_folder() then
+  if id == "extensions" then
+    require("lazycode.extensions").open()
+  elseif no_folder() then
     require("lazycode.welcome").open_side(id)
   elseif id == "explorer" then
     -- Opening a folder (`nvim .`) already creates the Explorer; calling it again would close it.
@@ -144,11 +212,26 @@ local function show(id, opts)
       existing:focus()
     end
   elseif id == "search" then
-    Snacks.picker.grep({
-      auto_close = false,
-      jump = { close = false },
-      layout = { preset = "sidebar", preview = false },
-    })
+    -- A fixed panel like VS Code's Search view, instead of a floating picker.
+    local far = require("grug-far")
+    local prefills = opts and opts.search and { search = opts.search } or nil
+    if far.has_instance(SEARCH) then
+      far.open_instance(SEARCH)
+      if prefills then
+        local inst = far.get_instance(SEARCH)
+        if inst then
+          inst:update_input_values(prefills, true)
+        end
+      end
+    else
+      far.open({
+        instanceName = SEARCH,
+        staticTitle = "Search",
+        windowCreationCommand = "topleft vertical " .. M.width .. "split",
+        prefills = prefills,
+      })
+    end
+    vim.wo.winfixwidth = true
   elseif lg and lg:buf_valid() then
     lg:show()
     lg:focus()
@@ -187,7 +270,7 @@ function M.toggle(id, opts)
     M.active = nil
   else
     for _, item in ipairs(items) do
-      if item.id ~= id and visible(item.id) then
+      if item.id ~= id and item.panel ~= false and visible(item.id) then
         hide(item.id)
       end
     end
@@ -200,10 +283,13 @@ end
 --- Closes every panel and the lazygit process, before switching folders.
 function M.reset()
   require("lazycode.welcome").close_side()
-  for _, source in ipairs({ "explorer", "grep" }) do
+  for _, source in ipairs({ "explorer", "lazycode_extensions" }) do
     for _, picker in ipairs(pickers(source)) do
       picker:close()
     end
+  end
+  if package.loaded["grug-far"] then
+    pcall(require("grug-far").kill_instance, SEARCH)
   end
   if lg then
     pcall(function()
@@ -212,6 +298,18 @@ function M.reset()
     lg = nil
   end
   M.active = nil
+end
+
+function M.open_search(search)
+  ensure_bar()
+  for _, item in ipairs(items) do
+    if item.id ~= "search" and item.panel ~= false and visible(item.id) then
+      hide(item.id)
+    end
+  end
+  show("search", { search = search })
+  M.active, M.last = "search", "search"
+  vim.schedule(fix_layout)
 end
 
 function M.toggle_sidebar()
@@ -223,6 +321,13 @@ function M.toggle_sidebar()
 end
 
 function M.setup()
+  -- The tabs start after the open panel (see panel_columns), so redraw them when panels open or close.
+  vim.api.nvim_create_autocmd({ "WinNew", "WinClosed", "WinResized" }, {
+    group = vim.api.nvim_create_augroup("lazycode_tabline", {}),
+    callback = vim.schedule_wrap(function()
+      vim.cmd.redrawtabline()
+    end),
+  })
   -- Snacks keeps its WinResized handler after closing a picker, and rendering then fails on the nil picker.
   local List = require("snacks.picker.core.list")
   local render = List.render
@@ -240,11 +345,19 @@ function M.setup()
     M.toggle("explorer")
   end, "Explorer")
   map("<C-S-f>", function()
-    M.toggle("search")
+    local search = require("lazycode.editing").consume_selection()
+    if search then
+      M.open_search(search)
+    else
+      M.toggle("search")
+    end
   end, "Search in Files")
   map("<C-S-g>", function()
     M.toggle("git")
   end, "Source Control (lazygit)")
+  map("<C-S-x>", function()
+    M.toggle("extensions")
+  end, "Extensions")
 
   local group = vim.api.nvim_create_augroup("lazycode_sidebar", { clear = true })
   vim.api.nvim_create_autocmd({ "BufWritePost", "FocusGained", "DirChanged", "TermLeave" }, {
@@ -255,6 +368,48 @@ function M.setup()
     group = group,
     callback = function()
       vim.schedule(fix_layout)
+    end,
+  })
+  -- Like VS Code, one click on a search result opens it, and Esc returns to the editor.
+  vim.api.nvim_create_autocmd("FileType", {
+    group = group,
+    pattern = "grug-far",
+    callback = function(ev)
+      local bopts = { buffer = ev.buf, silent = true, nowait = true }
+      vim.keymap.set({ "n", "i" }, "<LeftRelease>", function()
+        local win = vim.api.nvim_get_current_win()
+        local far = require("grug-far").get_instance(ev.buf)
+        if far then
+          far:goto_location()
+        end
+        if vim.api.nvim_get_current_win() == win and not require("lazycode.editing").vim_mode then
+          vim.schedule(function()
+            if vim.api.nvim_buf_is_valid(ev.buf) and vim.api.nvim_get_current_buf() == ev.buf then
+              vim.cmd.startinsert()
+            end
+          end)
+        end
+      end, bopts)
+      vim.keymap.set({ "n", "i" }, "<Esc>", function()
+        if vim.fn.mode() == "i" then
+          vim.cmd.stopinsert()
+        end
+        if vim.b[ev.buf].lazycode_transient then
+          local far = require("grug-far").get_instance(ev.buf)
+          if far then
+            far:close()
+          end
+        end
+        require("lazycode.welcome").focus_main()
+      end, bopts)
+      for _, key in ipairs(require("lazycode.platform").variants("<C-v>")) do
+        vim.keymap.set({ "n", "i" }, key, function()
+          local text = (vim.fn.getreg("+") or ""):gsub("[\r\n]+", " ")
+          if text ~= "" then
+            vim.api.nvim_put({ text }, "c", false, true)
+          end
+        end, bopts)
+      end
     end,
   })
   -- When the last editor window closes, quit instead of leaving the bar alone.
@@ -269,7 +424,7 @@ function M.setup()
       end
       if editors <= 1 then
         for _, item in ipairs(items) do
-          if visible(item.id) then
+          if item.panel ~= false and visible(item.id) then
             hide(item.id)
           end
         end
@@ -280,12 +435,25 @@ function M.setup()
     end,
   })
 
-  if #vim.api.nvim_list_uis() > 0 then
+  local function init_ui()
+    if require("lazycode.project").reloading() then
+      ensure_bar()
+      return
+    end
     if vim.fn.argc() == 0 then
       require("lazycode.welcome").show()
     end
     -- Like VS Code, initial focus is on the editor, not the Explorer.
     M.toggle("explorer", { enter = false })
+  end
+  if #vim.api.nvim_list_uis() > 0 then
+    init_ui()
+  else
+    vim.api.nvim_create_autocmd("UIEnter", {
+      group = group,
+      once = true,
+      callback = vim.schedule_wrap(init_ui),
+    })
   end
   M.refresh_git()
 end

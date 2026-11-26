@@ -216,6 +216,11 @@ function M.render_side()
   paint(side_buf, rows)
 end
 
+--- True when a line of the Welcome tab or its side panel runs something on click.
+function M.clickable(buffer, line)
+  return (buffer == buf and actions[line] or buffer == side_buf and side_actions[line]) ~= nil
+end
+
 local function click(get)
   return function()
     local pos = vim.fn.getmousepos()
@@ -310,6 +315,7 @@ function M.show()
   -- Remove the empty "[No Name]" tab Neovim starts with.
   if
     previous ~= buf
+    and vim.api.nvim_buf_is_valid(previous)
     and vim.api.nvim_buf_get_name(previous) == ""
     and vim.bo[previous].buftype == ""
     and not vim.bo[previous].modified

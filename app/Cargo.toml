@@ -1,0 +1,23 @@
+[package]
+name = "lazycode-app"
+version = "0.2.0-rc.1"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[[bin]]
+name = "lazycode-app"
+path = "src/main.rs"
+
+[dependencies]
+bytemuck = { version = "1", features = ["derive"] }
+fontdb = "0.23"
+fontdue = "0.9"
+pollster = "0.4"
+rmpv = "1"
+wgpu = "25"
+winit = "0.30"
+
+[profile.release]
+lto = "thin"
+codegen-units = 4

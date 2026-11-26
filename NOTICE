@@ -7,11 +7,13 @@ LazyVim starter: https://github.com/LazyVim/starter (Apache-2.0)
 
 The installer downloads these separately distributed programs, each under its own license:
 Neovim       https://github.com/neovim/neovim         (Apache-2.0 and Vim license)
-kitty        https://github.com/kovidgoyal/kitty      (GPL-3.0)
 lazygit      https://github.com/jesseduffield/lazygit (MIT)
 ripgrep      https://github.com/BurntSushi/ripgrep    (MIT or Unlicense)
 fd           https://github.com/sharkdp/fd            (MIT or Apache-2.0)
 Node.js      https://github.com/nodejs/node           (MIT and others)
+Nerd Fonts   https://github.com/ryanoasis/nerd-fonts  (MIT, symbols under their own licenses)
+Fira Code    https://github.com/tonsky/FiraCode       (SIL Open Font License 1.1), as patched by Nerd Fonts
+JetBrains Mono https://github.com/JetBrains/JetBrainsMono (SIL Open Font License 1.1), as patched by Nerd Fonts
 
 Neovim plugins are listed in lazy-lock.json and are fetched from their own repositories.
 

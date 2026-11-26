@@ -4,9 +4,11 @@ local M = {}
 --- Installed with LazyCode so completion works out of the box.
 M.tools = {
   "bash-language-server",
+  "copilot-language-server",
   "css-lsp",
   "docker-compose-language-service",
   "dockerfile-language-server",
+  "eslint-lsp",
   "hadolint",
   "html-lsp",
   "json-lsp",
@@ -14,6 +16,7 @@ M.tools = {
   "markdown-toc",
   "markdownlint-cli2",
   "marksman",
+  "prettier",
   "pyright",
   "ruff",
   "shfmt",
@@ -27,7 +30,6 @@ M.tools = {
 -- filetype = { extra, display name, required toolchain }
 local OPTIONAL = {
   go = { "lang.go", "Go", "go" },
-  rust = { "lang.rust", "Rust", "cargo" },
   php = { "lang.php", "PHP", "php" },
   java = { "lang.java", "Java", "java" },
   ruby = { "lang.ruby", "Ruby", "ruby" },
@@ -72,6 +74,20 @@ local function offer(ft)
 end
 
 function M.enable(ft)
+  if not ft or ft == "" then
+    local items = vim.tbl_keys(OPTIONAL)
+    table.sort(items)
+    return vim.ui.select(items, {
+      prompt = "Enable Language Support",
+      format_item = function(k)
+        return ("%s (%s)%s"):format(OPTIONAL[k][2], k, enabled(OPTIONAL[k][1]) and "  ● enabled" or "")
+      end,
+    }, function(choice)
+      if choice then
+        M.enable(choice)
+      end
+    end)
+  end
   local lang = OPTIONAL[ft]
   if not lang then
     return vim.notify("No optional language for: " .. tostring(ft), vim.log.levels.WARN, { title = "LazyCode" })
@@ -151,6 +167,75 @@ function M.install_tools()
   if #failed > 0 then
     io.stderr:write("LazyCode: failed to install: " .. table.concat(failed, ", ") .. "\n")
     vim.cmd("cquit 1")
+  end
+end
+
+--- Interactive picker for installing or removing individual Mason packages (Ctrl+Shift+P -> MasonInstall).
+function M.pick_mason()
+  require("lazy").load({ plugins = { "mason.nvim" } })
+  local registry = require("mason-registry")
+  local function open_picker()
+    local specs = registry.get_all_package_specs()
+    table.sort(specs, function(a, b)
+      return a.name < b.name
+    end)
+    local items = {}
+    for _, spec in ipairs(specs) do
+      local ok, pkg = pcall(registry.get_package, spec.name)
+      if ok then
+        local desc = (spec.description or ""):gsub("%s+", " ")
+        items[#items + 1] = {
+          text = spec.name .. " " .. desc,
+          pkg = pkg,
+          desc = desc,
+        }
+      end
+    end
+    Snacks.picker({
+      source = "lazycode_mason",
+      title = "Mason Packages (Enter/Click: install or uninstall)",
+      items = items,
+      layout = { preset = "vscode" },
+      format = function(item)
+        local on = item.pkg:is_installed()
+        local busy = item.pkg:is_installing()
+        local icon = busy and "◌ " or on and "● " or "○ "
+        local hl = busy and "DiagnosticWarn" or on and "DiagnosticOk" or "Comment"
+        return {
+          { icon, hl },
+          { item.pkg.name, "SnacksPickerFile" },
+          { "  " .. item.desc, "Comment" },
+        }
+      end,
+      confirm = function(picker, item)
+        if not item then
+          return
+        end
+        picker:close()
+        local pkg = item.pkg
+        if pkg:is_installed() then
+          pkg:uninstall()
+          vim.notify("Uninstalled " .. pkg.name, vim.log.levels.INFO, { title = "Mason" })
+        elseif not pkg:is_installing() then
+          vim.notify("Installing " .. pkg.name .. "...", vim.log.levels.INFO, { title = "Mason" })
+          pkg:install():once(
+            "closed",
+            vim.schedule_wrap(function()
+              if pkg:is_installed() then
+                vim.notify(pkg.name .. " installed.", vim.log.levels.INFO, { title = "Mason" })
+              else
+                vim.notify("Failed to install " .. pkg.name, vim.log.levels.ERROR, { title = "Mason" })
+              end
+            end)
+          )
+        end
+      end,
+    })
+  end
+  if #registry.get_all_package_names() == 0 then
+    registry.refresh(vim.schedule_wrap(open_picker))
+  else
+    open_picker()
   end
 end
 

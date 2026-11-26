@@ -2,7 +2,7 @@
 # Runs the end-to-end suites on a private virtual display, so no window ever
 # appears on your desktop.
 #   tests/headless.sh                 all suites
-#   tests/headless.sh explorer kitty  only these suites
+#   tests/headless.sh explorer app    only these suites
 set -u
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -11,7 +11,7 @@ command -v xvfb-run >/dev/null 2>&1 || {
   exit 2
 }
 
-[ "$#" -gt 0 ] || set -- editing terminal welcome explorer kitty complete
+[ "$#" -gt 0 ] || set -- editing terminal welcome explorer app complete
 logs=$(mktemp -d "${TMPDIR:-/tmp}/lazycode-tests.XXXXXX")
 failed=0
 
@@ -25,7 +25,7 @@ for suite in "$@"; do
   printf '%-10s exit=%s  %s\n' "$suite" "$code" "$(tail -n 1 "$log" | cut -c1-40)"
   if [ "$code" -ne 0 ]; then
     failed=1
-    grep -E '^(FAIL|HUNG|NOT FOUND|ITEM NOT|LAZYGIT DID|POPUP DID|input did|menu did|dialog did|did not|welcome did|missing item|kitty exited|Traceback)' "$log" | head -n 6 | cut -c1-120
+    grep -E '^(FAIL|HUNG|NOT FOUND|ITEM NOT|LAZYGIT DID|POPUP DID|input did|menu did|dialog did|did not|welcome did|missing item|app exited|Traceback)' "$log" | head -n 6 | cut -c1-120
     echo "  log: $log"
   fi
 done

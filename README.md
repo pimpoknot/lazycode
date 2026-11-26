@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/Neovim-0.12-57A143?logo=neovim&logoColor=white" alt="Neovim 0.12">
 </p>
 
-> **Status: release candidate.** Linux is tested. macOS support is being validated.
+> **Status: stable.** Linux and macOS are tested.
 
 ## Install
 
@@ -22,9 +22,11 @@ curl -fsSL https://raw.githubusercontent.com/pimpoknot/lazycode/main/install.sh 
 ```
 
 The installer needs `curl`, `tar`, `git` and, on Linux, `xz`. A C compiler is recommended for
-syntax highlighting. It does not use `sudo` and does not touch your Neovim or kitty setup.
-Neovim, kitty, lazygit, ripgrep, fd and Node are downloaded at pinned versions, verified with
-SHA-256 and kept in `~/.local/share/lazycode-runtime`.
+syntax highlighting. On Linux, copy and paste with other apps needs `wl-clipboard`, `xclip` or `xsel`. It does not use `sudo` and does not touch your Neovim setup.
+LazyCode runs in its own native window. That window, Neovim, lazygit, ripgrep, fd, Node and the
+fonts (FiraCode and JetBrains Mono Nerd Font, plus icons) are downloaded at pinned versions, verified with SHA-256 and kept in
+`~/.local/share/lazycode-runtime`. Without a prebuilt window for your system, the installer
+builds it with Rust when `cargo` is available.
 
 A full install uses about 1.2 GB, most of it language servers. To skip them:
 
@@ -70,27 +72,42 @@ On macOS, use `Cmd` in place of `Ctrl`, except for `` Ctrl+` ``, `Ctrl+Tab` and 
 
 | Area | Shortcuts |
 | --- | --- |
-| Files | `Ctrl+N` new, `Ctrl+O` open, `Ctrl+K Ctrl+O` open folder, `Ctrl+S` save, `Ctrl+W` close |
-| Editing | `Ctrl+Z`, `Ctrl+Y`, `Ctrl+C`, `Ctrl+X`, `Ctrl+V`, `Ctrl+A`, `Ctrl+/` |
+| Files | `Ctrl+N` new, `Ctrl+O` open, `Ctrl+K Ctrl+O` open folder, `Ctrl+S` save, `Ctrl+Shift+S` save as, `Ctrl+K S` save all, `Ctrl+W` close, `Ctrl+K Ctrl+W` close all |
+| Editing | `Ctrl+Z`, `Ctrl+Y`, `Ctrl+C`, `Ctrl+X`, `Ctrl+V`, `Ctrl+A`, `Ctrl+/`, `Ctrl+L` select line, `Alt+Z` word wrap, `Ctrl+K Ctrl+X` trim spaces |
 | Lines | `Alt+Up/Down` move, `Shift+Alt+Up/Down` duplicate, `Ctrl+Shift+K` delete |
 | Cursors | `Ctrl+D`, `Ctrl+Shift+L`, `Ctrl+Alt+Up/Down`, `Alt+Click` |
-| Navigate | `Ctrl+P`, `Ctrl+Shift+P`, `Ctrl+G`, `F12`, `Shift+F12`, `Alt+Left/Right` |
-| Search | `Ctrl+F`, `Ctrl+H`, `Ctrl+Shift+F`, `Ctrl+Shift+H` |
-| Code | `Ctrl+Space`, `Ctrl+.`, `F2`, `Shift+Alt+F`, `F8` |
-| Panels | `Ctrl+B`, `Ctrl+Shift+E`, `Ctrl+Shift+G`, `` Ctrl+` ``, `Ctrl+Shift+M` |
+| Navigate | `Ctrl+P`, `Ctrl+Shift+P` or `F1`, `Ctrl+G`, `Ctrl+T`, `F12`, `Ctrl+F12`, `Shift+F12`, `Ctrl+K F12`, `Alt+Left/Right`, `Ctrl+Shift+\`, `Ctrl+PageUp/PageDown` |
+| Search | `Ctrl+F`, `Ctrl+H`, `F3`, `Shift+F3`, `Ctrl+Shift+F`, `Ctrl+Shift+H` |
+| Code | `Ctrl+Space`, `Ctrl+Shift+Space`, `Ctrl+K Ctrl+I`, `Ctrl+.`, `F2`, `Shift+Alt+F`, `Ctrl+K Ctrl+F`, `F8` |
+| Panels | `Ctrl+B`, `Ctrl+Shift+E`, `Ctrl+Shift+G`, `Ctrl+Shift+X`, `` Ctrl+` ``, `Ctrl+Shift+M` |
+| Folding | `Ctrl+Shift+[` fold, `Ctrl+Shift+]` unfold, `Ctrl+K Ctrl+0` fold all, `Ctrl+K Ctrl+J` unfold all |
+| View | `Ctrl+=`, `Ctrl+-`, `Ctrl+0` zoom, `Ctrl+K Z` zen mode, `Ctrl+K Ctrl+T` theme, `Ctrl+K M` language |
 | Terminal | `Ctrl+Shift+C` copy, `Ctrl+Shift+V` paste |
 | Help | `Ctrl+K Ctrl+S` lists every shortcut |
 
 ## Customize
 
-- Window look: `~/.config/lazycode.local/kitty.conf`
+- Extensions: the puzzle icon or `Ctrl+Shift+X` lists every LazyVim extra. Search, then click one
+  to turn it on or off, and restart LazyCode.
+- Copilot suggestions are on by default and accepted with `Tab`. Sign in once with `:LspCopilotSignIn`.
+- ESLint and Prettier fix and format JavaScript and TypeScript (React included) on save.
+- Rust support turns on by itself when `cargo` is installed.
+- Reload Window (the last activity bar icon, or `:LazyCodeReload`) applies extension changes
+  without closing LazyCode.
 - More languages and plugins: `:LazyExtras`
+- Font size: `Ctrl+=`, `Ctrl+-` and `Ctrl+0`, like VS Code. The size is remembered.
+- Font: FiraCode Nerd Font Mono, or JetBrains Mono where FiraCode is missing. Family, fallback, size,
+  weight, bold weight, line height and letter spacing are all set in `lua/lazycode/font.lua`.
 
 ## Known limitations
+
+- Extras that replace a LazyCode part (a second Copilot, nvim-cmp, neo-tree, dashboards, two
+  snippet engines) cannot be turned on in Extensions.
 
 - VS Code extensions do not run. Languages and tools come from the Neovim ecosystem.
 - No debugger panel, Remote/SSH, or tab dragging yet.
 - `Ctrl+Shift+L` selects the matches visible on screen.
+- Emoji and CJK characters show as boxes, and input methods (IME) are not supported yet.
 - Windows is not supported.
 
 ## Uninstall

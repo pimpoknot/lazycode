@@ -1,18 +1,20 @@
 import json, os, re, signal, subprocess, sys, tempfile, time
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import appctl
 work = tempfile.mkdtemp(prefix="lazycode-wel-", dir=None)
 home = work + "/home"; os.makedirs(home + "/projects/app/src"); open(home+"/projects/app/main.txt","w").write("hi\n"); open(home+"/note.txt","w").write("note\n")
 up = work + "/up"; subprocess.run(["git","init","-q",up],check=True); open(up+"/README.md","w").write("x\n")
 subprocess.run(["git","-C",up,"add","."],check=True); subprocess.run(["git","-C",up,"-c","user.name=e","-c","user.email=e@example.invalid","commit","-qm","i"],check=True)
 state = work + "/state"; os.makedirs(state + "/lazycode")
 open(state+"/lazycode/lazycode_recent.json","w").write(json.dumps([home+"/projects"]))
-nsock=os.path.join(tempfile.gettempdir(),"lcw%d.sock"%os.getpid()); ksock="@lc-wel-%d"%os.getpid()
+nsock=os.path.join(tempfile.gettempdir(),"lcw%d.sock"%os.getpid())
 child={"NVIM_APPNAME":"lazycode","LAZYCODE_START":"welcome","HOME":home,"XDG_STATE_HOME":state,"XDG_CONFIG_HOME":os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),"XDG_DATA_HOME":os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"),"XDG_CACHE_HOME":work+"/cache","LC_CLIP":work+"/clip"}
 clip="lua vim.g.clipboard={name='e2e',copy={['+']={'sh','-c','cat > '..vim.env.LC_CLIP},['*']={'sh','-c','cat > '..vim.env.LC_CLIP}},paste={['+']={'sh','-c','cat '..vim.env.LC_CLIP..' 2>/dev/null'},['*']={'sh','-c','cat '..vim.env.LC_CLIP..' 2>/dev/null'}}}"
-kitty=subprocess.Popen(["kitty","--config",os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "lazycode/assets/kitty.conf"),"-o","allow_remote_control=yes","-o","remember_window_size=no","-o","initial_window_width=120c","-o","initial_window_height=36c","--listen-on","unix:"+ksock,"--class","lazycode-test","--directory",home,"env"]+[k+"="+v for k,v in child.items()]+["nvim","--cmd",clip,"--listen",nsock],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+app=appctl.App(["--cmd",clip,"--listen",nsock],home,env=dict(os.environ,**child),size=(120,36))
 def finish(c):
     try: subprocess.run(["nvim","--clean","--headless","--server",nsock,"--remote-expr","execute('qa!')"],capture_output=True,timeout=3)
     except Exception: pass
-    time.sleep(.3); kitty.terminate()
+    time.sleep(.3); app.close()
     try: os.unlink(nsock)
     except OSError: pass
     __import__('shutil').rmtree(work, ignore_errors=True); os._exit(c)
@@ -24,7 +26,7 @@ def lua(code,limit=8):
     o=(r.stdout+r.stderr).strip()
     try: return json.loads(o)
     except Exception: return o
-kc=lambda a: subprocess.run(["kitty","@","--to","unix:"+ksock]+a,capture_output=True,text=True).stdout
+kc=app.kc
 screen=lambda: kc(["get-text"])
 def until(f,limit=6):
     t=time.time()
